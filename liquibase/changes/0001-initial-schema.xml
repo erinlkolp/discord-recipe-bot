@@ -36,8 +36,7 @@
             <column name="created_at" type="DATETIME"/>
             <column name="updated_at" type="DATETIME"/>
         </createTable>
-        <addCheckConstraint tableName="recipes" constraintName="ck_recipe_servings"
-            checkCondition="servings > 0"/>
+        <sql>ALTER TABLE recipes ADD CONSTRAINT ck_recipe_servings CHECK (servings > 0)</sql>
         <createIndex tableName="recipes" indexName="idx_recipe_guild_id">
             <column name="guild_id"/>
         </createIndex>
@@ -141,8 +140,7 @@
         <addUniqueConstraint tableName="meal_plan_entries"
             columnNames="meal_plan_id,day_of_week,meal_type,recipe_id"
             constraintName="uq_meal_plan_entry"/>
-        <addCheckConstraint tableName="meal_plan_entries" constraintName="ck_entry_servings"
-            checkCondition="servings > 0"/>
+        <sql>ALTER TABLE meal_plan_entries ADD CONSTRAINT ck_entry_servings CHECK (servings > 0)</sql>
     </changeSet>
 
     <changeSet id="0001-shopping_lists" author="recipebot">
