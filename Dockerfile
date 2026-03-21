@@ -3,4 +3,4 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY recipebot/ ./recipebot/
-CMD ["python", "recipebot/bot.py"]
+CMD ["python", "-m", "recipebot.bot"]
