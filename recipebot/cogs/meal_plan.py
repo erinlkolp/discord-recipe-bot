@@ -13,13 +13,11 @@ MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 
 
 def _upsert_meal_plan(session: Session, guild_id: str, week: date, user_id: str) -> MealPlan:
-    """Insert or update meal plan for guild+week. Uses ORM merge for DB portability."""
+    """Get existing meal plan for guild+week, or create it. Never overwrites created_by."""
     existing = session.query(MealPlan).filter_by(
         guild_id=guild_id, week_start_date=week
     ).first()
     if existing:
-        existing.created_by = user_id
-        session.commit()
         return existing
     mp = MealPlan(guild_id=guild_id, week_start_date=week, created_by=user_id)
     session.add(mp)
@@ -65,16 +63,22 @@ class MealPlanCog(commands.Cog):
         user_id = str(interaction.user.id)
         with self.bot.session_factory() as session:
             upsert_guild(session, guild_id, interaction.guild.name)
+            # Look up recipe in this guild first
             r = session.query(Recipe).filter_by(guild_id=guild_id, name=recipe).first()
             if not r:
-                await interaction.response.send_message(
-                    embed=error_embed("Recipe not found."), ephemeral=True
-                )
-                return
-            if r.guild_id != guild_id:
-                await interaction.response.send_message(
-                    embed=error_embed("That recipe does not belong to this server."), ephemeral=True
-                )
+                # Check if the recipe exists in another guild (cross-guild bypass attempt)
+                other = session.query(Recipe).filter(
+                    Recipe.name == recipe, Recipe.guild_id != guild_id
+                ).first()
+                if other:
+                    await interaction.response.send_message(
+                        embed=error_embed("That recipe does not belong to this server."),
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        embed=error_embed("Recipe not found."), ephemeral=True
+                    )
                 return
             week = current_week_start()
             meal_plan = _upsert_meal_plan(session, guild_id, week, user_id)

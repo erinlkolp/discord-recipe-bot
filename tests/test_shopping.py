@@ -75,3 +75,16 @@ async def test_shopping_view_no_list(session, bot, mock_interaction):
         await cog.shopping_view.callback(cog, mock_interaction)
     kwargs = mock_interaction.response.send_message.call_args[1]
     assert kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_shopping_generate_no_meal_plan(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+    mock_interaction.guild_id = "111"
+    mock_interaction.guild.name = "Test"
+    cog = ShoppingCog(bot)
+    with patch("recipebot.cogs.shopping.current_week_start", return_value=date(2026, 3, 16)):
+        await cog.shopping_generate.callback(cog, mock_interaction)
+    kwargs = mock_interaction.response.send_message.call_args[1]
+    assert kwargs.get("ephemeral") is True

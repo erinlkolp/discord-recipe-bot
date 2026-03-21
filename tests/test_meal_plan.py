@@ -58,3 +58,19 @@ async def test_plan_add_rejects_duplicate(session, bot, mock_interaction):
 
     msg_kwargs = mock_interaction.response.send_message.call_args[1]
     assert msg_kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_plan_add_rejects_missing_recipe(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+    mock_interaction.guild_id = "111"
+    mock_interaction.guild.name = "Test"
+    mock_interaction.user.id = "999"
+    cog = MealPlanCog(bot)
+    with patch("recipebot.cogs.meal_plan.current_week_start", return_value=date(2026, 3, 16)):
+        await cog.plan_add.callback(cog, mock_interaction, "Nonexistent", "monday", "dinner", 2)
+    kwargs = mock_interaction.response.send_message.call_args[1]
+    assert kwargs.get("ephemeral") is True
+    embed = kwargs.get("embed")
+    assert "not found" in embed.description.lower()

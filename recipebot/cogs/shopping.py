@@ -57,17 +57,19 @@ class ShoppingCog(commands.Cog):
 
             aggregated = aggregate_shopping_items(raw_items)
 
-            # Find any existing shopping list to replace after creating the new one
+            # Replace existing shopping list for this meal plan (atomic)
             existing = session.query(ShoppingList).filter_by(meal_plan_id=meal_plan.id).first()
+            if existing:
+                session.delete(existing)
+                # No commit here — keep the delete and insert in one transaction
 
-            # Create the new shopping list first (ensures a fresh primary key)
             sl = ShoppingList(
                 guild_id=guild_id,
                 meal_plan_id=meal_plan.id,
                 generated_at=datetime.now(timezone.utc),
             )
             session.add(sl)
-            session.commit()
+            session.flush()  # Get sl.id without committing
             for item in aggregated:
                 session.add(ShoppingListItem(
                     shopping_list_id=sl.id,
@@ -76,12 +78,7 @@ class ShoppingCog(commands.Cog):
                     unit=item['unit'],
                     category=item['category'],
                 ))
-            session.commit()
-
-            # Now remove the old list (after the new one is committed)
-            if existing:
-                session.delete(existing)
-                session.commit()
+            session.commit()  # Single commit: delete old + insert new
         await interaction.response.send_message(
             embed=success_embed(
                 f"Shopping list generated with {len(aggregated)} item(s). "
