@@ -172,7 +172,7 @@ class DeleteConfirmView(discord.ui.View):
 class SearchPaginationView(discord.ui.View):
     PAGE_SIZE = 5
 
-    def __init__(self, results: list[Recipe]):
+    def __init__(self, results: list[dict]):
         super().__init__(timeout=60)
         self._results = results
         self._page = 0
@@ -183,7 +183,7 @@ class SearchPaginationView(discord.ui.View):
         total_pages = (len(self._results) - 1) // self.PAGE_SIZE + 1
         embed = discord.Embed(title=f"Search Results (page {self._page + 1}/{total_pages})")
         for r in page_results:
-            embed.add_field(name=r.name, value=r.description or "No description.", inline=False)
+            embed.add_field(name=r["name"], value=r["description"] or "No description.", inline=False)
         return embed
 
     @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
@@ -278,6 +278,12 @@ class RecipesCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @recipebot_group.command(name="search", description="Search recipes by name, ingredient, or tag")
+    @app_commands.describe(by="Search by: name, ingredient, or tag", query="Search query")
+    @app_commands.choices(by=[
+        app_commands.Choice(name="Name", value="name"),
+        app_commands.Choice(name="Ingredient", value="ingredient"),
+        app_commands.Choice(name="Tag", value="tag"),
+    ])
     async def search(
         self,
         interaction: discord.Interaction,
@@ -287,13 +293,13 @@ class RecipesCog(commands.Cog):
         with self.bot.session_factory() as session:
             guild_id = str(interaction.guild_id)
             if by == "name":
-                results = session.query(Recipe).filter(
+                rows = session.query(Recipe).filter(
                     Recipe.guild_id == guild_id,
                     Recipe.name.ilike(f"%{query}%")
                 ).all()
             elif by == "ingredient":
                 from recipebot.db.models import Ingredient
-                results = (
+                rows = (
                     session.query(Recipe)
                     .join(Ingredient)
                     .filter(Recipe.guild_id == guild_id, Ingredient.name.ilike(f"%{query}%"))
@@ -301,28 +307,32 @@ class RecipesCog(commands.Cog):
                 )
             elif by == "tag":
                 from recipebot.db.models import Tag
-                results = (
+                rows = (
                     session.query(Recipe)
                     .join(Tag)
                     .filter(Recipe.guild_id == guild_id, Tag.tag_name.ilike(f"%{query}%"))
                     .distinct().all()
                 )
             else:
-                results = []
+                rows = []
 
-            if not results:
+            if not rows:
                 await interaction.response.send_message(
                     embed=error_embed("No recipes found."), ephemeral=True
                 )
                 return
-            if len(results) <= 5:
-                embed = discord.Embed(title=f"Search results for '{query}'")
-                for r in results:
-                    embed.add_field(name=r.name, value=r.description or "No description.", inline=False)
-                await interaction.response.send_message(embed=embed)
-            else:
-                view = SearchPaginationView(results)
-                await interaction.response.send_message(embed=view.current_embed(), view=view)
+
+            # Convert to plain dicts while session is still open
+            results = [{"name": r.name, "description": r.description} for r in rows]
+
+        if len(results) <= 5:
+            embed = discord.Embed(title=f"Search results for '{query}'")
+            for r in results:
+                embed.add_field(name=r["name"], value=r["description"] or "No description.", inline=False)
+            await interaction.response.send_message(embed=embed)
+        else:
+            view = SearchPaginationView(results)
+            await interaction.response.send_message(embed=view.current_embed(), view=view)
 
     @staticmethod
     def _build_recipe_embed(recipe: Recipe) -> discord.Embed:

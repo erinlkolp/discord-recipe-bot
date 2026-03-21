@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from recipebot.db.models import Guild, Recipe
-from recipebot.cogs.recipes import RecipesCog, AddRecipeModal, EditRecipeModal
+from recipebot.cogs.recipes import RecipesCog, AddRecipeModal, EditRecipeModal, SearchPaginationView
 
 
 @pytest.fixture
@@ -109,3 +109,39 @@ async def test_view_recipe_not_found(session, bot, mock_interaction):
     await cog.view.callback(cog, mock_interaction, "Ghost Recipe")
     kwargs = mock_interaction.response.send_message.call_args[1]
     assert kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_search_by_name_returns_embed(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+    session.add(Recipe(guild_id="111", name="Pasta", servings=4))
+    session.commit()
+    mock_interaction.guild_id = "111"
+    cog = RecipesCog(bot)
+    await cog.search.callback(cog, mock_interaction, by="name", query="pasta")
+    mock_interaction.response.send_message.assert_called_once()
+    _, kwargs = mock_interaction.response.send_message.call_args
+    assert "embed" in kwargs
+
+
+@pytest.mark.asyncio
+async def test_search_no_results_ephemeral(session, bot, mock_interaction):
+    mock_interaction.guild_id = "111"
+    cog = RecipesCog(bot)
+    await cog.search.callback(cog, mock_interaction, by="name", query="nonexistent")
+    _, kwargs = mock_interaction.response.send_message.call_args
+    assert kwargs.get("ephemeral") is True
+
+
+def test_search_pagination_view_pages():
+    results = [{"name": f"Recipe {i}", "description": None} for i in range(7)]
+    view = SearchPaginationView(results)
+    embed = view.current_embed()
+    assert "1/2" in embed.title
+    assert len(embed.fields) == 5
+
+    view._page = 1
+    embed2 = view.current_embed()
+    assert "2/2" in embed2.title
+    assert len(embed2.fields) == 2
