@@ -20,7 +20,8 @@ async def test_add_recipe_modal_creates_recipe(session, bot, mock_interaction):
     session.add(Guild(guild_id="111", name="Test"))
     session.commit()
 
-    modal = AddRecipeModal(session)
+    from tests.conftest import make_session_factory
+    modal = AddRecipeModal(make_session_factory(session))
     modal.name.default = "Spaghetti"
     modal.description.default = "Classic pasta"
     modal.servings.default = "4"
@@ -54,7 +55,8 @@ async def test_add_recipe_modal_invalid_servings(session, bot, mock_interaction)
     mock_interaction.guild.name = "Test"
     mock_interaction.user.id = "999"
 
-    modal = AddRecipeModal(session)
+    from tests.conftest import make_session_factory
+    modal = AddRecipeModal(make_session_factory(session))
     modal.servings.default = "abc"
     modal.name.default = "Bread"
     modal.description.default = ""

@@ -1,7 +1,6 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from recipebot.db.models import Recipe
 from recipebot.db.connection import upsert_guild
@@ -30,14 +29,13 @@ class AddRecipeModal(discord.ui.Modal, title="Add Recipe"):
     prep_time = discord.ui.TextInput(label="Prep Time (minutes)", required=False, max_length=10)
     cook_time = discord.ui.TextInput(label="Cook Time (minutes)", required=False, max_length=10)
 
-    def __init__(self, session: Session):
+    def __init__(self, session_factory):
         super().__init__()
-        self._session = session
+        self._session_factory = session_factory
 
     async def on_submit(self, interaction: discord.Interaction):
-        servings_val = _text_value(self.servings)
         try:
-            servings = int(servings_val)
+            servings = int(_text_value(self.servings))
             if servings <= 0:
                 raise ValueError
         except ValueError:
@@ -46,29 +44,35 @@ class AddRecipeModal(discord.ui.Modal, title="Add Recipe"):
             )
             return
 
-        prep_val = _text_value(self.prep_time).strip()
-        cook_val = _text_value(self.cook_time).strip()
-        prep = int(prep_val) if prep_val else None
-        cook = int(cook_val) if cook_val else None
+        try:
+            prep = int(_text_value(self.prep_time)) if _text_value(self.prep_time) else None
+            cook = int(_text_value(self.cook_time)) if _text_value(self.cook_time) else None
+        except ValueError:
+            await interaction.response.send_message(
+                embed=error_embed("Prep time and cook time must be whole numbers (minutes)."),
+                ephemeral=True
+            )
+            return
 
-        upsert_guild(self._session, str(interaction.guild_id), interaction.guild.name)
-
-        now = datetime.now(timezone.utc)
-        recipe = Recipe(
-            guild_id=str(interaction.guild_id),
-            name=_text_value(self.name).strip(),
-            description=_text_value(self.description).strip() or None,
-            servings=servings,
-            prep_time=prep,
-            cook_time=cook,
-            created_by=str(interaction.user.id),
-            created_at=now,
-            updated_at=now,
-        )
-        self._session.add(recipe)
-        self._session.commit()
+        with self._session_factory() as session:
+            upsert_guild(session, str(interaction.guild_id), interaction.guild.name)
+            now = datetime.now(timezone.utc)
+            recipe = Recipe(
+                guild_id=str(interaction.guild_id),
+                name=_text_value(self.name),
+                description=_text_value(self.description) or None,
+                servings=servings,
+                prep_time=prep,
+                cook_time=cook,
+                created_by=str(interaction.user.id),
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(recipe)
+            session.commit()
+            recipe_name = recipe.name
         await interaction.response.send_message(
-            embed=success_embed(f"Recipe **{recipe.name}** added! "
+            embed=success_embed(f"Recipe **{recipe_name}** added! "
                                 f"Use `/recipebot ingredients` and `/recipebot instructions` to complete it."),
             ephemeral=True
         )
@@ -84,21 +88,20 @@ class EditRecipeModal(discord.ui.Modal, title="Edit Recipe"):
     prep_time = discord.ui.TextInput(label="Prep Time (minutes)", required=False, max_length=10)
     cook_time = discord.ui.TextInput(label="Cook Time (minutes)", required=False, max_length=10)
 
-    def __init__(self, session: Session, recipe: Recipe):
+    def __init__(self, session_factory, recipe_id: int, recipe_name: str, recipe_description: str,
+                 recipe_servings: int, recipe_prep_time, recipe_cook_time):
         super().__init__()
-        self._session = session
-        self._recipe = recipe
-        self.name.default = recipe.name
-        self.description.default = recipe.description or ""
-        self.servings.default = str(recipe.servings)
-        self.prep_time.default = str(recipe.prep_time) if recipe.prep_time else ""
-        self.cook_time.default = str(recipe.cook_time) if recipe.cook_time else ""
+        self._session_factory = session_factory
+        self._recipe_id = recipe_id
+        self.name.default = recipe_name
+        self.description.default = recipe_description or ""
+        self.servings.default = str(recipe_servings)
+        self.prep_time.default = str(recipe_prep_time) if recipe_prep_time else ""
+        self.cook_time.default = str(recipe_cook_time) if recipe_cook_time else ""
 
     async def on_submit(self, interaction: discord.Interaction):
-        upsert_guild(self._session, str(interaction.guild_id), interaction.guild.name)
-        servings_val = _text_value(self.servings)
         try:
-            servings = int(servings_val)
+            servings = int(_text_value(self.servings))
             if servings <= 0:
                 raise ValueError
         except ValueError:
@@ -107,41 +110,62 @@ class EditRecipeModal(discord.ui.Modal, title="Edit Recipe"):
             )
             return
 
-        self._recipe.name = _text_value(self.name).strip()
-        self._recipe.description = _text_value(self.description).strip() or None
-        self._recipe.servings = servings
-        prep_val = _text_value(self.prep_time).strip()
-        cook_val = _text_value(self.cook_time).strip()
-        self._recipe.prep_time = int(prep_val) if prep_val else None
-        self._recipe.cook_time = int(cook_val) if cook_val else None
-        self._recipe.updated_at = datetime.now(timezone.utc)
-        self._session.commit()
+        try:
+            prep = int(_text_value(self.prep_time)) if _text_value(self.prep_time) else None
+            cook = int(_text_value(self.cook_time)) if _text_value(self.cook_time) else None
+        except ValueError:
+            await interaction.response.send_message(
+                embed=error_embed("Prep time and cook time must be whole numbers (minutes)."),
+                ephemeral=True
+            )
+            return
+
+        with self._session_factory() as session:
+            upsert_guild(session, str(interaction.guild_id), interaction.guild.name)
+            recipe = session.get(Recipe, self._recipe_id)
+            if not recipe:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            recipe.name = _text_value(self.name)
+            recipe.description = _text_value(self.description) or None
+            recipe.servings = servings
+            recipe.prep_time = prep
+            recipe.cook_time = cook
+            recipe.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            recipe_name = recipe.name
         await interaction.response.send_message(
-            embed=success_embed(f"Recipe **{self._recipe.name}** updated."), ephemeral=True
+            embed=success_embed(f"Recipe **{recipe_name}** updated."), ephemeral=True
         )
 
 
 class DeleteConfirmView(discord.ui.View):
-    def __init__(self, session: Session, recipe: Recipe):
+    def __init__(self, session_factory, recipe_id: int, recipe_name: str):
         super().__init__(timeout=30)
-        self._session = session
-        self._recipe = recipe
+        self._session_factory = session_factory
+        self._recipe_id = recipe_id
+        self._recipe_name = recipe_name
 
     @discord.ui.button(label="Delete", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        name = self._recipe.name
-        self._session.delete(self._recipe)
-        self._session.commit()
+        with self._session_factory() as session:
+            recipe = session.get(Recipe, self._recipe_id)
+            if recipe:
+                session.delete(recipe)
+                session.commit()
         self.stop()
         await interaction.response.send_message(
-            embed=success_embed(f"Recipe **{name}** deleted."), ephemeral=True
+            embed=success_embed(f"Recipe **{self._recipe_name}** deleted."), ephemeral=True
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.stop()
         await interaction.response.send_message(
-            embed=success_embed("Deletion cancelled."), ephemeral=True
+            embed=discord.Embed(description="Deletion cancelled.", color=discord.Color.greyple()),
+            ephemeral=True
         )
 
 
@@ -152,7 +176,7 @@ class RecipesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def _get_recipe(self, session: Session, guild_id: str, name: str) -> Recipe | None:
+    def _get_recipe(self, session, guild_id: str, name: str) -> Recipe | None:
         return session.query(Recipe).filter_by(guild_id=guild_id, name=name).first()
 
     async def _recipe_autocomplete(
@@ -167,10 +191,9 @@ class RecipesCog(commands.Cog):
 
     @recipebot_group.command(name="add", description="Add a new recipe")
     async def add(self, interaction: discord.Interaction):
-        with self.bot.session_factory() as session:
-            modal = AddRecipeModal(session)
-            await interaction.response.send_modal(modal)
-            await modal.wait()
+        modal = AddRecipeModal(self.bot.session_factory)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
 
     @recipebot_group.command(name="edit", description="Edit an existing recipe")
     @app_commands.autocomplete(recipe=_recipe_autocomplete)
@@ -182,9 +205,12 @@ class RecipesCog(commands.Cog):
                     embed=error_embed("Recipe not found."), ephemeral=True
                 )
                 return
-            modal = EditRecipeModal(session, r)
-            await interaction.response.send_modal(modal)
-            await modal.wait()
+            modal = EditRecipeModal(
+                self.bot.session_factory, r.id, r.name, r.description,
+                r.servings, r.prep_time, r.cook_time
+            )
+        await interaction.response.send_modal(modal)
+        await modal.wait()
 
     @recipebot_group.command(name="delete", description="Delete a recipe")
     @app_commands.autocomplete(recipe=_recipe_autocomplete)
@@ -197,13 +223,15 @@ class RecipesCog(commands.Cog):
                     embed=error_embed("Recipe not found."), ephemeral=True
                 )
                 return
-            view = DeleteConfirmView(session, r)
-            await interaction.response.send_message(
-                embed=discord.Embed(description=f"Delete **{r.name}**? This cannot be undone."),
-                view=view,
-                ephemeral=True,
-            )
-            await view.wait()
+            recipe_id, recipe_name = r.id, r.name
+        view = DeleteConfirmView(self.bot.session_factory, recipe_id, recipe_name)
+        await interaction.response.send_message(
+            embed=discord.Embed(description=f"Delete **{recipe_name}**? This cannot be undone.",
+                                color=discord.Color.orange()),
+            view=view,
+            ephemeral=True,
+        )
+        await view.wait()
 
 
 async def setup(bot):
