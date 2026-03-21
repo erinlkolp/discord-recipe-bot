@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from collections import defaultdict
 from typing import Optional
 
 VALID_CATEGORIES = {'produce', 'dairy', 'meat', 'seafood', 'pantry', 'frozen', 'bakery', 'other'}
@@ -71,24 +70,25 @@ def aggregate_shopping_items(items: list[dict]) -> list[dict]:
     Items with the same (name.lower(), unit) are summed after scaling.
     Different units for the same ingredient produce separate line items.
     """
-    totals: dict[tuple, Decimal] = defaultdict(Decimal)
+    totals: dict[tuple, Decimal] = {}
     categories: dict[tuple, str] = {}
+    ordered_keys: list[tuple] = []
 
-    seen_keys: set = set()
     for item in items:
         scale = Decimal(str(item['entry_servings'])) / Decimal(str(item['recipe_servings']))
         key = (item['name'].lower(), item['unit'] or '')
-        seen_keys.add(key)
+        if key not in totals and key not in categories:
+            ordered_keys.append(key)
         if item['quantity'] is not None:
-            totals[key] += item['quantity'] * scale
+            totals[key] = totals.get(key, Decimal(0)) + item['quantity'] * scale
         categories[key] = item['category']
 
     return [
         {
             'ingredient_name': key[0],
             'unit': key[1],
-            'total_quantity': totals[key] if totals[key] else None,
+            'total_quantity': totals.get(key),
             'category': categories[key],
         }
-        for key in seen_keys
+        for key in ordered_keys
     ]

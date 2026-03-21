@@ -89,3 +89,14 @@ def test_aggregate_shopping_items_different_units_separate():
     ]
     result = aggregate_shopping_items(items)
     assert len(result) == 2
+
+
+def test_aggregate_shopping_items_null_quantity_included():
+    items = [
+        {"name": "salt", "quantity": None, "unit": "to taste", "category": "pantry",
+         "entry_servings": 4, "recipe_servings": 4},
+    ]
+    result = aggregate_shopping_items(items)
+    assert len(result) == 1
+    assert result[0]["ingredient_name"] == "salt"
+    assert result[0]["total_quantity"] is None
