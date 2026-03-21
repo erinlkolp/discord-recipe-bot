@@ -21,7 +21,7 @@ def _upsert_meal_plan(session: Session, guild_id: str, week: date, user_id: str)
         return existing
     mp = MealPlan(guild_id=guild_id, week_start_date=week, created_by=user_id)
     session.add(mp)
-    session.commit()
+    session.flush()
     return mp
 
 
@@ -59,6 +59,9 @@ class MealPlanCog(commands.Cog):
         meal_type: str,
         servings: int,
     ):
+        if servings <= 0:
+            await interaction.response.send_message(embed=error_embed("Servings must be greater than 0."), ephemeral=True)
+            return
         guild_id = str(interaction.guild_id)
         user_id = str(interaction.user.id)
         with self.bot.session_factory() as session:

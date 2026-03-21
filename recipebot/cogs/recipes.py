@@ -123,7 +123,7 @@ class EditRecipeModal(discord.ui.Modal, title="Edit Recipe"):
         with self._session_factory() as session:
             upsert_guild(session, str(interaction.guild_id), interaction.guild.name)
             recipe = session.get(Recipe, self._recipe_id)
-            if not recipe:
+            if not recipe or recipe.guild_id != str(interaction.guild_id):
                 await interaction.response.send_message(
                     embed=error_embed("Recipe not found."), ephemeral=True
                 )
@@ -152,9 +152,11 @@ class DeleteConfirmView(discord.ui.View):
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         with self._session_factory() as session:
             recipe = session.get(Recipe, self._recipe_id)
-            if recipe:
-                session.delete(recipe)
-                session.commit()
+            if not recipe or recipe.guild_id != str(interaction.guild_id):
+                await interaction.response.send_message(embed=error_embed("Recipe not found."), ephemeral=True)
+                return
+            session.delete(recipe)
+            session.commit()
         self.stop()
         await interaction.response.send_message(
             embed=success_embed(f"Recipe **{self._recipe_name}** deleted."), ephemeral=True
@@ -197,7 +199,7 @@ class IngredientsModal(discord.ui.Modal, title="Set Ingredients"):
             return
         with self._session_factory() as session:
             recipe = session.get(Recipe, self._recipe_id)
-            if not recipe:
+            if not recipe or recipe.guild_id != str(interaction.guild_id):
                 await interaction.response.send_message(
                     embed=error_embed("Recipe not found."), ephemeral=True
                 )
@@ -245,7 +247,7 @@ class InstructionsModal(discord.ui.Modal, title="Set Instructions"):
             return
         with self._session_factory() as session:
             recipe = session.get(Recipe, self._recipe_id)
-            if not recipe:
+            if not recipe or recipe.guild_id != str(interaction.guild_id):
                 await interaction.response.send_message(
                     embed=error_embed("Recipe not found."), ephemeral=True
                 )
@@ -282,7 +284,7 @@ class TagModal(discord.ui.Modal, title="Set Tags"):
         text = self.tags_text.value or self.tags_text.default or ""
         with self._session_factory() as session:
             recipe = session.get(Recipe, self._recipe_id)
-            if not recipe:
+            if not recipe or recipe.guild_id != str(interaction.guild_id):
                 await interaction.response.send_message(
                     embed=error_embed("Recipe not found."), ephemeral=True
                 )

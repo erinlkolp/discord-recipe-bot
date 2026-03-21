@@ -19,7 +19,6 @@ def upsert_guild(session: Session, guild_id: str, guild_name: str) -> None:
     """Ensure a guild row exists; safe to call on every command invocation."""
     from recipebot.db.models import Guild
     session.merge(Guild(guild_id=str(guild_id), name=guild_name))
-    session.commit()
 
 
 def current_week_start():

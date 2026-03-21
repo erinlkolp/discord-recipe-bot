@@ -21,8 +21,9 @@ class RecipeBot(commands.Bot):
         await self.add_cog(RecipesCog(self))
         await self.add_cog(MealPlanCog(self))
         await self.add_cog(ShoppingCog(self))
-        await self.tree.sync()
-        log.info("Slash commands synced.")
+        if os.environ.get("SYNC_COMMANDS") == "1":
+            await self.tree.sync()
+            log.info("Slash commands synced.")
 
     async def on_ready(self):
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
