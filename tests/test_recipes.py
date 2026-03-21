@@ -189,5 +189,78 @@ async def test_ingredients_command_rejects_bad_lines(session, bot, mock_interact
     mock_interaction.response.send_message.assert_called_once()
     kwargs = mock_interaction.response.send_message.call_args[1]
     assert kwargs.get("ephemeral") is True
+    embed = kwargs.get("embed")
+    assert embed is not None
+    assert "Line 1" in embed.description
     remaining = session.query(Ingredient).filter_by(recipe_id=recipe.id).all()
     assert len(remaining) == 0  # no partial writes
+
+
+@pytest.mark.asyncio
+async def test_instructions_modal_replaces(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    from datetime import timezone
+    recipe = Recipe(guild_id="111", name="Pasta", servings=4,
+                    created_at=datetime.now(timezone.utc))
+    session.add(recipe)
+    session.commit()
+    old_inst = Instruction(recipe_id=recipe.id, step_number=1, instruction_text="old step")
+    session.add(old_inst)
+    session.commit()
+
+    from recipebot.cogs.recipes import InstructionsModal
+    from tests.conftest import make_session_factory
+    modal = InstructionsModal(make_session_factory(session), recipe.id)
+    modal.instructions_text.default = "Boil water\nAdd pasta\nDrain"
+    mock_interaction.guild_id = "111"
+    await modal.on_submit(mock_interaction)
+
+    remaining = session.query(Instruction).filter_by(recipe_id=recipe.id).order_by(Instruction.step_number).all()
+    assert len(remaining) == 3
+    assert remaining[0].instruction_text == "Boil water"
+    assert remaining[0].step_number == 1
+    assert remaining[2].step_number == 3
+
+
+@pytest.mark.asyncio
+async def test_instructions_modal_empty_rejects(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    from datetime import timezone
+    recipe = Recipe(guild_id="111", name="Pasta", servings=4,
+                    created_at=datetime.now(timezone.utc))
+    session.add(recipe)
+    session.commit()
+
+    from recipebot.cogs.recipes import InstructionsModal
+    from tests.conftest import make_session_factory
+    modal = InstructionsModal(make_session_factory(session), recipe.id)
+    modal.instructions_text.default = "\n\n\n"  # all blank lines
+    await modal.on_submit(mock_interaction)
+
+    mock_interaction.response.send_message.assert_called_once()
+    _, kwargs = mock_interaction.response.send_message.call_args
+    assert kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_tag_modal_replaces(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    from datetime import timezone
+    recipe = Recipe(guild_id="111", name="Pasta", servings=4,
+                    created_at=datetime.now(timezone.utc))
+    session.add(recipe)
+    session.commit()
+    old_tag = Tag(recipe_id=recipe.id, tag_name="old")
+    session.add(old_tag)
+    session.commit()
+
+    from recipebot.cogs.recipes import TagModal
+    from tests.conftest import make_session_factory
+    modal = TagModal(make_session_factory(session), recipe.id, "old")
+    modal.tags_text.default = "italian, pasta"
+    mock_interaction.guild_id = "111"
+    await modal.on_submit(mock_interaction)
+
+    remaining = session.query(Tag).filter_by(recipe_id=recipe.id).all()
+    tag_names = {t.tag_name for t in remaining}
+    assert tag_names == {"italian", "pasta"}
