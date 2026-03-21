@@ -42,6 +42,8 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
+      SYNC_COMMANDS: ${SYNC_COMMANDS:-}
+      SYNC_GUILD_ID: ${SYNC_GUILD_ID:-}
     restart: unless-stopped
 
 volumes:
