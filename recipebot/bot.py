@@ -22,8 +22,15 @@ class RecipeBot(commands.Bot):
         await self.add_cog(MealPlanCog(self))
         await self.add_cog(ShoppingCog(self))
         if os.environ.get("SYNC_COMMANDS") == "1":
-            await self.tree.sync()
-            log.info("Slash commands synced.")
+            guild_id = os.environ.get("SYNC_GUILD_ID")
+            if guild_id:
+                guild = discord.Object(id=int(guild_id))
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                log.info(f"Slash commands synced to guild {guild_id}.")
+            else:
+                await self.tree.sync()
+                log.info("Slash commands synced globally.")
 
     async def on_ready(self):
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
