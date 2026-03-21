@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 
@@ -17,13 +17,8 @@ def get_session_factory(engine):
 
 def upsert_guild(session: Session, guild_id: str, guild_name: str) -> None:
     """Ensure a guild row exists; safe to call on every command invocation."""
-    session.execute(
-        text(
-            "INSERT INTO guilds (guild_id, name) VALUES (:id, :name) "
-            "ON DUPLICATE KEY UPDATE name = VALUES(name)"
-        ),
-        {"id": str(guild_id), "name": guild_name},
-    )
+    from recipebot.db.models import Guild
+    session.merge(Guild(guild_id=str(guild_id), name=guild_name))
     session.commit()
 
 

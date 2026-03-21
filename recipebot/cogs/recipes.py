@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
-from recipebot.db.models import Recipe, Guild
+from recipebot.db.models import Recipe
 from recipebot.db.connection import upsert_guild
 
 
@@ -51,9 +51,7 @@ class AddRecipeModal(discord.ui.Modal, title="Add Recipe"):
         prep = int(prep_val) if prep_val else None
         cook = int(cook_val) if cook_val else None
 
-        # Use merge() for SQLite/MySQL compatibility instead of raw SQL upsert
-        self._session.merge(Guild(guild_id=str(interaction.guild_id), name=interaction.guild.name))
-        self._session.commit()
+        upsert_guild(self._session, str(interaction.guild_id), interaction.guild.name)
 
         now = datetime.now(timezone.utc)
         recipe = Recipe(
@@ -97,6 +95,7 @@ class EditRecipeModal(discord.ui.Modal, title="Edit Recipe"):
         self.cook_time.default = str(recipe.cook_time) if recipe.cook_time else ""
 
     async def on_submit(self, interaction: discord.Interaction):
+        upsert_guild(self._session, str(interaction.guild_id), interaction.guild.name)
         servings_val = _text_value(self.servings)
         try:
             servings = int(servings_val)
@@ -191,6 +190,7 @@ class RecipesCog(commands.Cog):
     @app_commands.autocomplete(recipe=_recipe_autocomplete)
     async def delete(self, interaction: discord.Interaction, recipe: str):
         with self.bot.session_factory() as session:
+            upsert_guild(session, str(interaction.guild_id), interaction.guild.name)
             r = self._get_recipe(session, str(interaction.guild_id), recipe)
             if not r:
                 await interaction.response.send_message(
