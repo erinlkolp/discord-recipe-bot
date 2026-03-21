@@ -169,6 +169,137 @@ class DeleteConfirmView(discord.ui.View):
         )
 
 
+class IngredientsModal(discord.ui.Modal, title="Set Ingredients"):
+    ingredients_text = discord.ui.TextInput(
+        label="Ingredients (name, qty, unit, category per line)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=4000,
+        placeholder="flour, 2, cup, pantry\neggs, 3, , dairy",
+    )
+
+    def __init__(self, session_factory, recipe_id: int):
+        super().__init__()
+        self._session_factory = session_factory
+        self._recipe_id = recipe_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from recipebot.parsers import parse_ingredients
+        from recipebot.db.models import Ingredient
+        text = self.ingredients_text.value or self.ingredients_text.default or ""
+        items, errors = parse_ingredients(text)
+        if errors:
+            lines = "\n".join(f"Line {e.line_number}: {e.reason}" for e in errors)
+            await interaction.response.send_message(
+                embed=error_embed(f"Fix these errors and resubmit:\n```{lines}```"),
+                ephemeral=True,
+            )
+            return
+        with self._session_factory() as session:
+            recipe = session.get(Recipe, self._recipe_id)
+            if not recipe:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            session.query(Ingredient).filter_by(recipe_id=self._recipe_id).delete()
+            for item in items:
+                session.add(Ingredient(
+                    recipe_id=self._recipe_id,
+                    name=item.name,
+                    quantity=item.quantity,
+                    unit=item.unit,
+                    category=item.category,
+                ))
+            session.commit()
+            recipe_name = recipe.name
+        await interaction.response.send_message(
+            embed=success_embed(f"Ingredients updated for **{recipe_name}**."),
+            ephemeral=True,
+        )
+
+
+class InstructionsModal(discord.ui.Modal, title="Set Instructions"):
+    instructions_text = discord.ui.TextInput(
+        label="Steps (one per line)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=4000,
+        placeholder="Boil water\nAdd pasta\nCook 10 minutes\nDrain and serve",
+    )
+
+    def __init__(self, session_factory, recipe_id: int):
+        super().__init__()
+        self._session_factory = session_factory
+        self._recipe_id = recipe_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from recipebot.parsers import parse_instructions
+        from recipebot.db.models import Instruction
+        text = self.instructions_text.value or self.instructions_text.default or ""
+        steps = parse_instructions(text)
+        if not steps:
+            await interaction.response.send_message(
+                embed=error_embed("No instructions provided."), ephemeral=True
+            )
+            return
+        with self._session_factory() as session:
+            recipe = session.get(Recipe, self._recipe_id)
+            if not recipe:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            session.query(Instruction).filter_by(recipe_id=self._recipe_id).delete()
+            for i, text_step in enumerate(steps, start=1):
+                session.add(Instruction(
+                    recipe_id=self._recipe_id, step_number=i, instruction_text=text_step
+                ))
+            session.commit()
+            recipe_name = recipe.name
+        await interaction.response.send_message(
+            embed=success_embed(f"Instructions updated for **{recipe_name}**."),
+            ephemeral=True,
+        )
+
+
+class TagModal(discord.ui.Modal, title="Set Tags"):
+    tags_text = discord.ui.TextInput(
+        label="Tags (comma-separated)",
+        required=False,
+        max_length=500,
+        placeholder="italian, pasta, dinner",
+    )
+
+    def __init__(self, session_factory, recipe_id: int, current_tags: str = ""):
+        super().__init__()
+        self._session_factory = session_factory
+        self._recipe_id = recipe_id
+        self.tags_text.default = current_tags
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from recipebot.db.models import Tag
+        text = self.tags_text.value or self.tags_text.default or ""
+        with self._session_factory() as session:
+            recipe = session.get(Recipe, self._recipe_id)
+            if not recipe:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            session.query(Tag).filter_by(recipe_id=self._recipe_id).delete()
+            raw = text.strip()
+            if raw:
+                for tag in {t.strip().lower() for t in raw.split(",") if t.strip()}:
+                    session.add(Tag(recipe_id=self._recipe_id, tag_name=tag))
+            session.commit()
+            recipe_name = recipe.name
+        await interaction.response.send_message(
+            embed=success_embed(f"Tags updated for **{recipe_name}**."),
+            ephemeral=True,
+        )
+
+
 class SearchPaginationView(discord.ui.View):
     PAGE_SIZE = 5
 
@@ -334,6 +465,52 @@ class RecipesCog(commands.Cog):
             view = SearchPaginationView(results)
             await interaction.response.send_message(embed=view.current_embed(), view=view)
 
+    @recipebot_group.command(name="ingredients", description="Set ingredients for a recipe (replaces existing)")
+    @app_commands.autocomplete(recipe=_recipe_autocomplete)
+    async def ingredients(self, interaction: discord.Interaction, recipe: str):
+        with self.bot.session_factory() as session:
+            r = self._get_recipe(session, str(interaction.guild_id), recipe)
+            if not r:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            recipe_id = r.id
+        modal = IngredientsModal(self.bot.session_factory, recipe_id)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+
+    @recipebot_group.command(name="instructions", description="Set instructions for a recipe (replaces existing)")
+    @app_commands.autocomplete(recipe=_recipe_autocomplete)
+    async def instructions(self, interaction: discord.Interaction, recipe: str):
+        with self.bot.session_factory() as session:
+            r = self._get_recipe(session, str(interaction.guild_id), recipe)
+            if not r:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            recipe_id = r.id
+        modal = InstructionsModal(self.bot.session_factory, recipe_id)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+
+    @recipebot_group.command(name="tag", description="Set tags for a recipe")
+    @app_commands.autocomplete(recipe=_recipe_autocomplete)
+    async def tag(self, interaction: discord.Interaction, recipe: str):
+        with self.bot.session_factory() as session:
+            r = self._get_recipe(session, str(interaction.guild_id), recipe)
+            if not r:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            recipe_id = r.id
+            current_tags = ", ".join(t.tag_name for t in r.tags)
+        modal = TagModal(self.bot.session_factory, recipe_id, current_tags)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+
     @staticmethod
     def _build_recipe_embed(recipe: Recipe) -> discord.Embed:
         embed = discord.Embed(title=recipe.name, description=recipe.description or "")
@@ -358,4 +535,6 @@ class RecipesCog(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(RecipesCog(bot))
+    cog = RecipesCog(bot)
+    bot.tree.add_command(recipebot_group)
+    await bot.add_cog(cog)

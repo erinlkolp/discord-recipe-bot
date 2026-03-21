@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
-from recipebot.db.models import Guild, Recipe
+from recipebot.db.models import Guild, Recipe, Ingredient, Instruction, Tag
 from recipebot.cogs.recipes import RecipesCog, AddRecipeModal, EditRecipeModal, SearchPaginationView
 
 
@@ -145,3 +145,49 @@ def test_search_pagination_view_pages():
     embed2 = view.current_embed()
     assert "2/2" in embed2.title
     assert len(embed2.fields) == 2
+
+
+@pytest.mark.asyncio
+async def test_ingredients_command_replaces(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    from datetime import timezone
+    recipe = Recipe(guild_id="111", name="Pasta", servings=4,
+                    created_at=datetime.now(timezone.utc))
+    session.add(recipe)
+    session.commit()
+    old_ing = Ingredient(recipe_id=recipe.id, name="old", category="other")
+    session.add(old_ing)
+    session.commit()
+
+    from recipebot.cogs.recipes import IngredientsModal
+    from tests.conftest import make_session_factory
+    modal = IngredientsModal(make_session_factory(session), recipe.id)
+    modal.ingredients_text.default = "flour, 2, cup, pantry\nsalt, 1, tsp, pantry"
+    mock_interaction.guild_id = "111"
+    await modal.on_submit(mock_interaction)
+
+    remaining = session.query(Ingredient).filter_by(recipe_id=recipe.id).all()
+    assert len(remaining) == 2
+    assert remaining[0].name == "flour"
+
+
+@pytest.mark.asyncio
+async def test_ingredients_command_rejects_bad_lines(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    from datetime import timezone
+    recipe = Recipe(guild_id="111", name="Pasta", servings=4,
+                    created_at=datetime.now(timezone.utc))
+    session.add(recipe)
+    session.commit()
+
+    from recipebot.cogs.recipes import IngredientsModal
+    from tests.conftest import make_session_factory
+    modal = IngredientsModal(make_session_factory(session), recipe.id)
+    modal.ingredients_text.default = "flour, 2, cup"  # missing category
+    await modal.on_submit(mock_interaction)
+
+    mock_interaction.response.send_message.assert_called_once()
+    kwargs = mock_interaction.response.send_message.call_args[1]
+    assert kwargs.get("ephemeral") is True
+    remaining = session.query(Ingredient).filter_by(recipe_id=recipe.id).all()
+    assert len(remaining) == 0  # no partial writes
