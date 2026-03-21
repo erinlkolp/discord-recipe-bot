@@ -73,11 +73,13 @@ def aggregate_shopping_items(items: list[dict]) -> list[dict]:
     totals: dict[tuple, Decimal] = {}
     categories: dict[tuple, str] = {}
     ordered_keys: list[tuple] = []
+    seen: set[tuple] = set()
 
     for item in items:
         scale = Decimal(str(item['entry_servings'])) / Decimal(str(item['recipe_servings']))
         key = (item['name'].lower(), item['unit'] or '')
-        if key not in totals and key not in categories:
+        if key not in seen:
+            seen.add(key)
             ordered_keys.append(key)
         if item['quantity'] is not None:
             totals[key] = totals.get(key, Decimal(0)) + item['quantity'] * scale
