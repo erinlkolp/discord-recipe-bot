@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="0001-guilds" author="recipebot">
+        <createTable tableName="guilds">
+            <column name="guild_id" type="VARCHAR(20)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(100)"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="0001-recipes" author="recipebot">
+        <createTable tableName="recipes">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="guild_id" type="VARCHAR(20)">
+                <constraints nullable="false" foreignKeyName="fk_recipe_guild"
+                    references="guilds(guild_id)"/>
+            </column>
+            <column name="name" type="VARCHAR(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="TEXT"/>
+            <column name="servings" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prep_time" type="INT"/>
+            <column name="cook_time" type="INT"/>
+            <column name="created_by" type="VARCHAR(20)"/>
+            <column name="created_at" type="DATETIME"/>
+            <column name="updated_at" type="DATETIME"/>
+        </createTable>
+        <addCheckConstraint tableName="recipes" constraintName="ck_recipe_servings"
+            checkCondition="servings > 0"/>
+        <createIndex tableName="recipes" indexName="idx_recipe_guild_id">
+            <column name="guild_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="0001-ingredients" author="recipebot">
+        <createTable tableName="ingredients">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="recipe_id" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_ingredient_recipe"
+                    references="recipes(id)" deleteCascade="true"/>
+            </column>
+            <column name="name" type="VARCHAR(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="quantity" type="DECIMAL(10,3)"/>
+            <column name="unit" type="VARCHAR(50)"/>
+            <column name="category" type="ENUM('produce','dairy','meat','seafood','pantry','frozen','bakery','other')"
+                defaultValue="other">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="0001-instructions" author="recipebot">
+        <createTable tableName="instructions">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="recipe_id" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_instruction_recipe"
+                    references="recipes(id)" deleteCascade="true"/>
+            </column>
+            <column name="step_number" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="instruction_text" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="0001-tags" author="recipebot">
+        <createTable tableName="tags">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="recipe_id" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_tag_recipe"
+                    references="recipes(id)" deleteCascade="true"/>
+            </column>
+            <column name="tag_name" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="0001-meal_plans" author="recipebot">
+        <createTable tableName="meal_plans">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="guild_id" type="VARCHAR(20)">
+                <constraints nullable="false" foreignKeyName="fk_meal_plan_guild"
+                    references="guilds(guild_id)"/>
+            </column>
+            <column name="week_start_date" type="DATE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="VARCHAR(20)"/>
+        </createTable>
+        <addUniqueConstraint tableName="meal_plans" columnNames="guild_id,week_start_date"
+            constraintName="uq_meal_plan_guild_week"/>
+    </changeSet>
+
+    <changeSet id="0001-meal_plan_entries" author="recipebot">
+        <createTable tableName="meal_plan_entries">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="meal_plan_id" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_entry_meal_plan"
+                    references="meal_plans(id)" deleteCascade="true"/>
+            </column>
+            <column name="recipe_id" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_entry_recipe"
+                    references="recipes(id)" deleteCascade="true"/>
+            </column>
+            <column name="day_of_week" type="ENUM('monday','tuesday','wednesday','thursday','friday','saturday','sunday')">
+                <constraints nullable="false"/>
+            </column>
+            <column name="meal_type" type="ENUM('breakfast','lunch','dinner','snack')">
+                <constraints nullable="false"/>
+            </column>
+            <column name="servings" type="INT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="meal_plan_entries"
+            columnNames="meal_plan_id,day_of_week,meal_type,recipe_id"
+            constraintName="uq_meal_plan_entry"/>
+        <addCheckConstraint tableName="meal_plan_entries" constraintName="ck_entry_servings"
+            checkCondition="servings > 0"/>
+    </changeSet>
+
+    <changeSet id="0001-shopping_lists" author="recipebot">
+        <createTable tableName="shopping_lists">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="guild_id" type="VARCHAR(20)">
+                <constraints nullable="false" foreignKeyName="fk_shopping_list_guild"
+                    references="guilds(guild_id)"/>
+            </column>
+            <column name="meal_plan_id" type="INT">
+                <constraints foreignKeyName="fk_shopping_list_meal_plan"
+                    references="meal_plans(id)" deleteCascade="true"/>
+            </column>
+            <column name="generated_at" type="DATETIME"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="0001-shopping_list_items" author="recipebot">
+        <createTable tableName="shopping_list_items">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="shopping_list_id" type="INT">
+                <constraints nullable="false" foreignKeyName="fk_item_shopping_list"
+                    references="shopping_lists(id)" deleteCascade="true"/>
+            </column>
+            <column name="ingredient_name" type="VARCHAR(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_quantity" type="DECIMAL(10,3)"/>
+            <column name="unit" type="VARCHAR(50)"/>
+            <column name="category" type="ENUM('produce','dairy','meat','seafood','pantry','frozen','bakery','other')"
+                defaultValue="other">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+</databaseChangeLog>
