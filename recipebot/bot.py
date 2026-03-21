@@ -15,12 +15,9 @@ class RecipeBot(commands.Bot):
         self.session_factory = session_factory
 
     async def setup_hook(self):
-        from recipebot.cogs.recipes import RecipesCog
-        from recipebot.cogs.meal_plan import MealPlanCog
-        from recipebot.cogs.shopping import ShoppingCog
-        await self.add_cog(RecipesCog(self))
-        await self.add_cog(MealPlanCog(self))
-        await self.add_cog(ShoppingCog(self))
+        await self.load_extension("recipebot.cogs.recipes")
+        await self.load_extension("recipebot.cogs.meal_plan")
+        await self.load_extension("recipebot.cogs.shopping")
         if os.environ.get("SYNC_COMMANDS") == "1":
             guild_id = os.environ.get("SYNC_GUILD_ID")
             if guild_id:
