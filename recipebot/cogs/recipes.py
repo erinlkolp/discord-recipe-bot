@@ -169,6 +169,37 @@ class DeleteConfirmView(discord.ui.View):
         )
 
 
+class SearchPaginationView(discord.ui.View):
+    PAGE_SIZE = 5
+
+    def __init__(self, results: list[Recipe]):
+        super().__init__(timeout=60)
+        self._results = results
+        self._page = 0
+
+    def current_embed(self) -> discord.Embed:
+        start = self._page * self.PAGE_SIZE
+        page_results = self._results[start:start + self.PAGE_SIZE]
+        total_pages = (len(self._results) - 1) // self.PAGE_SIZE + 1
+        embed = discord.Embed(title=f"Search Results (page {self._page + 1}/{total_pages})")
+        for r in page_results:
+            embed.add_field(name=r.name, value=r.description or "No description.", inline=False)
+        return embed
+
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self._page > 0:
+            self._page -= 1
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        max_page = (len(self._results) - 1) // self.PAGE_SIZE
+        if self._page < max_page:
+            self._page += 1
+        await interaction.response.edit_message(embed=self.current_embed(), view=self)
+
+
 recipebot_group = app_commands.Group(name="recipebot", description="Recipe bot commands")
 
 
@@ -232,6 +263,88 @@ class RecipesCog(commands.Cog):
             ephemeral=True,
         )
         await view.wait()
+
+    @recipebot_group.command(name="view", description="View a recipe")
+    @app_commands.autocomplete(recipe=_recipe_autocomplete)
+    async def view(self, interaction: discord.Interaction, recipe: str):
+        with self.bot.session_factory() as session:
+            r = self._get_recipe(session, str(interaction.guild_id), recipe)
+            if not r:
+                await interaction.response.send_message(
+                    embed=error_embed("Recipe not found."), ephemeral=True
+                )
+                return
+            embed = self._build_recipe_embed(r)
+        await interaction.response.send_message(embed=embed)
+
+    @recipebot_group.command(name="search", description="Search recipes by name, ingredient, or tag")
+    async def search(
+        self,
+        interaction: discord.Interaction,
+        by: str = "name",
+        query: str = "",
+    ):
+        with self.bot.session_factory() as session:
+            guild_id = str(interaction.guild_id)
+            if by == "name":
+                results = session.query(Recipe).filter(
+                    Recipe.guild_id == guild_id,
+                    Recipe.name.ilike(f"%{query}%")
+                ).all()
+            elif by == "ingredient":
+                from recipebot.db.models import Ingredient
+                results = (
+                    session.query(Recipe)
+                    .join(Ingredient)
+                    .filter(Recipe.guild_id == guild_id, Ingredient.name.ilike(f"%{query}%"))
+                    .distinct().all()
+                )
+            elif by == "tag":
+                from recipebot.db.models import Tag
+                results = (
+                    session.query(Recipe)
+                    .join(Tag)
+                    .filter(Recipe.guild_id == guild_id, Tag.tag_name.ilike(f"%{query}%"))
+                    .distinct().all()
+                )
+            else:
+                results = []
+
+            if not results:
+                await interaction.response.send_message(
+                    embed=error_embed("No recipes found."), ephemeral=True
+                )
+                return
+            if len(results) <= 5:
+                embed = discord.Embed(title=f"Search results for '{query}'")
+                for r in results:
+                    embed.add_field(name=r.name, value=r.description or "No description.", inline=False)
+                await interaction.response.send_message(embed=embed)
+            else:
+                view = SearchPaginationView(results)
+                await interaction.response.send_message(embed=view.current_embed(), view=view)
+
+    @staticmethod
+    def _build_recipe_embed(recipe: Recipe) -> discord.Embed:
+        embed = discord.Embed(title=recipe.name, description=recipe.description or "")
+        meta_parts = [f"Servings: {recipe.servings}"]
+        if recipe.prep_time:
+            meta_parts.append(f"Prep: {recipe.prep_time}min")
+        if recipe.cook_time:
+            meta_parts.append(f"Cook: {recipe.cook_time}min")
+        embed.add_field(name="Details", value=" | ".join(meta_parts), inline=False)
+        if recipe.tags:
+            embed.add_field(name="Tags", value=", ".join(t.tag_name for t in recipe.tags), inline=False)
+        if recipe.ingredients:
+            lines = []
+            for ing in recipe.ingredients:
+                qty = f"{ing.quantity} {ing.unit}".strip() if ing.quantity else ing.unit or ""
+                lines.append(f"• {ing.name}" + (f" ({qty})" if qty else ""))
+            embed.add_field(name="Ingredients", value="\n".join(lines)[:1024], inline=False)
+        if recipe.instructions:
+            lines = [f"{ins.step_number}. {ins.instruction_text}" for ins in recipe.instructions]
+            embed.add_field(name="Instructions", value="\n".join(lines)[:1024], inline=False)
+        return embed
 
 
 async def setup(bot):

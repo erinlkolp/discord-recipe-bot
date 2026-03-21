@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from recipebot.db.models import Guild, Recipe
 from recipebot.cogs.recipes import RecipesCog, AddRecipeModal, EditRecipeModal
@@ -80,4 +81,31 @@ async def test_edit_recipe_missing(session, bot, mock_interaction):
     await cog.edit.callback(cog, mock_interaction, "Nonexistent")
     mock_interaction.response.send_message.assert_called_once()
     _, kwargs = mock_interaction.response.send_message.call_args
+    assert kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_view_recipe_sends_embed(session, bot, mock_interaction):
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+    from datetime import timezone
+    recipe = Recipe(guild_id="111", name="Pasta", servings=4,
+                    created_at=datetime.now(timezone.utc))
+    session.add(recipe)
+    session.commit()
+    mock_interaction.guild_id = "111"
+    mock_interaction.guild.name = "Test"
+    cog = RecipesCog(bot)
+    await cog.view.callback(cog, mock_interaction, "Pasta")
+    mock_interaction.response.send_message.assert_called_once()
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert "embed" in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_view_recipe_not_found(session, bot, mock_interaction):
+    mock_interaction.guild_id = "111"
+    cog = RecipesCog(bot)
+    await cog.view.callback(cog, mock_interaction, "Ghost Recipe")
+    kwargs = mock_interaction.response.send_message.call_args[1]
     assert kwargs.get("ephemeral") is True
