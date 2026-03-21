@@ -27,7 +27,7 @@ services:
       --url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}
       --username=${DB_USER}
       --password=${DB_PASSWORD}
-      --changelog-file=changelog/changelog.xml
+      --changelog-file=changelog.xml
       update
 
   recipebot:
