@@ -1,5 +1,4 @@
 import pytest
-import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
