@@ -121,12 +121,20 @@ class ShoppingCog(commands.Cog):
                     qty = ""
                 unit = f" {item.unit}" if item.unit else ""
                 qty_str = f": {qty}{unit}" if qty or unit else ""
-                by_category[cat].append(f"• {item.ingredient_name}{qty_str}")
+                by_category.setdefault(cat, []).append(f"• {item.ingredient_name}{qty_str}")
             for cat in CATEGORY_ORDER:
-                if by_category[cat]:
+                if by_category.get(cat):
                     embed.add_field(
                         name=cat.capitalize(),
                         value="\n".join(by_category[cat])[:1024],
+                        inline=False,
+                    )
+            # Render any unexpected categories that aren't in CATEGORY_ORDER
+            for cat, items_list in by_category.items():
+                if cat not in CATEGORY_ORDER and items_list:
+                    embed.add_field(
+                        name=cat.capitalize(),
+                        value="\n".join(items_list)[:1024],
                         inline=False,
                     )
         await interaction.response.send_message(embed=embed)

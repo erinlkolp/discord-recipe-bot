@@ -100,3 +100,35 @@ async def test_shopping_generate_no_meal_plan_skips_guild_upsert(session, bot, m
         await cog.shopping_generate.callback(cog, mock_interaction)
     # Guild row should NOT have been persisted on the early-return path
     assert session.query(Guild).filter_by(guild_id="222").first() is None
+
+
+@pytest.mark.asyncio
+async def test_shopping_view_unknown_category_no_crash(session, bot, mock_interaction):
+    """shopping_view should not crash if an item has an unexpected category."""
+    mp = _seed_plan_with_recipe(session)
+    sl = ShoppingList(guild_id="111", meal_plan_id=mp.id,
+                      generated_at=datetime.now(timezone.utc))
+    session.add(sl)
+    session.flush()
+    item = ShoppingListItem(
+        shopping_list_id=sl.id,
+        ingredient_name="mystery",
+        total_quantity=Decimal("1"),
+        unit="each",
+        category="other",
+    )
+    session.add(item)
+    session.commit()
+    # Simulate an unexpected category value (e.g. future schema change).
+    # Pre-load sl.items so the relationship won't re-query from the DB, then
+    # patch category directly in the ORM object's __dict__ to bypass the
+    # SQLAlchemy Enum result-processor which would reject the unknown value.
+    _ = sl.items  # force-load the relationship
+    item.__dict__["category"] = "spices"
+    mock_interaction.guild_id = "111"
+    mock_interaction.guild.name = "Test"
+    cog = ShoppingCog(bot)
+    with patch("recipebot.cogs.shopping.current_week_start", return_value=date(2026, 3, 16)):
+        await cog.shopping_view.callback(cog, mock_interaction)
+    # Should succeed without KeyError
+    mock_interaction.response.send_message.assert_called_once()
