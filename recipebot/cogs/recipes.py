@@ -121,7 +121,6 @@ class EditRecipeModal(discord.ui.Modal, title="Edit Recipe"):
             return
 
         with self._session_factory() as session:
-            upsert_guild(session, str(interaction.guild_id), interaction.guild.name)
             recipe = session.get(Recipe, self._recipe_id)
             if not recipe or recipe.guild_id != str(interaction.guild_id):
                 await interaction.response.send_message(
@@ -380,7 +379,6 @@ class RecipesCog(commands.Cog):
     @app_commands.autocomplete(recipe=_recipe_autocomplete)
     async def delete(self, interaction: discord.Interaction, recipe: str):
         with self.bot.session_factory() as session:
-            upsert_guild(session, str(interaction.guild_id), interaction.guild.name)
             r = self._get_recipe(session, str(interaction.guild_id), recipe)
             if not r:
                 await interaction.response.send_message(
@@ -536,7 +534,19 @@ class RecipesCog(commands.Cog):
         return embed
 
 
+def _bind_group_commands(cog):
+    """Bind cog instance to commands on the shared recipebot_group.
+
+    CogMeta skips commands with parent != None, so commands added via
+    @recipebot_group.command() never get their cog binding set automatically.
+    """
+    for value in type(cog).__dict__.values():
+        if isinstance(value, app_commands.Command) and value.parent is not None:
+            value.binding = cog
+
+
 async def setup(bot):
     cog = RecipesCog(bot)
-    bot.tree.add_command(recipebot_group)
     await bot.add_cog(cog)
+    _bind_group_commands(cog)
+    bot.tree.add_command(recipebot_group)

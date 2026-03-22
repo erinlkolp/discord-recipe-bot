@@ -134,6 +134,35 @@ async def test_search_no_results_ephemeral(session, bot, mock_interaction):
     assert kwargs.get("ephemeral") is True
 
 
+@pytest.mark.asyncio
+async def test_delete_missing_recipe_skips_guild_upsert(session, bot, mock_interaction):
+    """delete should not call upsert_guild — it doesn't write guild-FK-dependent data."""
+    mock_interaction.guild_id = "222"
+    mock_interaction.guild.name = "New Guild"
+    cog = RecipesCog(bot)
+    await cog.delete.callback(cog, mock_interaction, "Nonexistent")
+    assert session.query(Guild).filter_by(guild_id="222").first() is None
+
+
+@pytest.mark.asyncio
+async def test_edit_modal_missing_recipe_skips_guild_upsert(session, bot, mock_interaction):
+    """EditRecipeModal should not call upsert_guild — the recipe's guild already exists."""
+    mock_interaction.guild_id = "222"
+    mock_interaction.guild.name = "New Guild"
+    mock_interaction.user.id = "999"
+    from tests.conftest import make_session_factory
+    modal = EditRecipeModal(make_session_factory(session), recipe_id=9999,
+                            recipe_name="Ghost", recipe_description="",
+                            recipe_servings=4, recipe_prep_time=None, recipe_cook_time=None)
+    modal.name.default = "Ghost"
+    modal.servings.default = "4"
+    modal.description.default = ""
+    modal.prep_time.default = ""
+    modal.cook_time.default = ""
+    await modal.on_submit(mock_interaction)
+    assert session.query(Guild).filter_by(guild_id="222").first() is None
+
+
 def test_search_pagination_view_pages():
     results = [{"name": f"Recipe {i}", "description": None} for i in range(7)]
     view = SearchPaginationView(results)
