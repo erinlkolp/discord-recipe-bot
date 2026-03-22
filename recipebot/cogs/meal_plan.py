@@ -65,7 +65,6 @@ class MealPlanCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         user_id = str(interaction.user.id)
         with self.bot.session_factory() as session:
-            upsert_guild(session, guild_id, interaction.guild.name)
             # Look up recipe in this guild first
             r = session.query(Recipe).filter_by(guild_id=guild_id, name=recipe).first()
             if not r:
@@ -83,6 +82,7 @@ class MealPlanCog(commands.Cog):
                         embed=error_embed("Recipe not found."), ephemeral=True
                     )
                 return
+            upsert_guild(session, guild_id, interaction.guild.name)
             week = current_week_start()
             meal_plan = _upsert_meal_plan(session, guild_id, week, user_id)
             entry = MealPlanEntry(
@@ -147,4 +147,7 @@ class MealPlanCog(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(MealPlanCog(bot))
+    from recipebot.cogs.recipes import _bind_group_commands
+    cog = MealPlanCog(bot)
+    await bot.add_cog(cog)
+    _bind_group_commands(cog)

@@ -74,3 +74,15 @@ async def test_plan_add_rejects_missing_recipe(session, bot, mock_interaction):
     assert kwargs.get("ephemeral") is True
     embed = kwargs.get("embed")
     assert "not found" in embed.description.lower()
+
+
+@pytest.mark.asyncio
+async def test_plan_add_missing_recipe_skips_guild_upsert(session, bot, mock_interaction):
+    """upsert_guild should not run when the recipe doesn't exist."""
+    mock_interaction.guild_id = "222"
+    mock_interaction.guild.name = "New Guild"
+    mock_interaction.user.id = "999"
+    cog = MealPlanCog(bot)
+    with patch("recipebot.cogs.meal_plan.current_week_start", return_value=date(2026, 3, 16)):
+        await cog.plan_add.callback(cog, mock_interaction, "Nonexistent", "monday", "dinner", 2)
+    assert session.query(Guild).filter_by(guild_id="222").first() is None
