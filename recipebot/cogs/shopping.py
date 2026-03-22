@@ -20,7 +20,6 @@ class ShoppingCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         week = current_week_start()
         with self.bot.session_factory() as session:
-            upsert_guild(session, guild_id, interaction.guild.name)
             meal_plan = session.query(MealPlan).filter_by(
                 guild_id=guild_id, week_start_date=week
             ).first()
@@ -40,6 +39,8 @@ class ShoppingCog(commands.Cog):
                     ephemeral=True,
                 )
                 return
+
+            upsert_guild(session, guild_id, interaction.guild.name)
 
             # Build raw items list for aggregation
             raw_items = []
@@ -132,4 +133,7 @@ class ShoppingCog(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(ShoppingCog(bot))
+    from recipebot.cogs.recipes import _bind_group_commands
+    cog = ShoppingCog(bot)
+    await bot.add_cog(cog)
+    _bind_group_commands(cog)

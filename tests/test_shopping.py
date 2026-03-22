@@ -88,3 +88,15 @@ async def test_shopping_generate_no_meal_plan(session, bot, mock_interaction):
         await cog.shopping_generate.callback(cog, mock_interaction)
     kwargs = mock_interaction.response.send_message.call_args[1]
     assert kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_shopping_generate_no_meal_plan_skips_guild_upsert(session, bot, mock_interaction):
+    """upsert_guild should not run (and leave uncommitted state) when there's no meal plan."""
+    mock_interaction.guild_id = "222"
+    mock_interaction.guild.name = "New Guild"
+    cog = ShoppingCog(bot)
+    with patch("recipebot.cogs.shopping.current_week_start", return_value=date(2026, 3, 16)):
+        await cog.shopping_generate.callback(cog, mock_interaction)
+    # Guild row should NOT have been persisted on the early-return path
+    assert session.query(Guild).filter_by(guild_id="222").first() is None
