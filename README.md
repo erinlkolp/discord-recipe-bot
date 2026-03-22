@@ -140,15 +140,18 @@ tests/
 
 ### Ingredient Format
 
-When adding ingredients via `/recipebot ingredients`, enter one per line:
+When adding ingredients via `/recipebot ingredients`, enter one per line as comma-separated fields:
 
 ```
-2 cups flour pantry
-1.5 tsp salt pantry
-200g chicken breast meat
+flour, 2, cup, pantry
+salt, 1.5, tsp, pantry
+chicken breast, 200, g, meat
+eggs, 3, , dairy
 ```
 
-Format: `<quantity> <unit> <name> <category>`
+Format: `<name>, <quantity>, <unit>, <category>`
+
+Leave quantity or unit blank (keep the commas) for items like "salt to taste".
 
 Valid categories: `produce`, `dairy`, `meat`, `seafood`, `pantry`, `frozen`, `bakery`, `other`
 

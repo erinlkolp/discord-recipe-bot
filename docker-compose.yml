@@ -1,6 +1,7 @@
 services:
   percona:
     image: percona/percona-server:latest
+    command: --default-authentication-plugin=caching_sha2_password
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}

@@ -56,6 +56,10 @@ view = SearchPaginationView(results)
 
 `upsert_guild` and `_upsert_meal_plan` do **not** call `session.commit()` internally. The caller owns the commit. Always end a `with session:` block with a single `session.commit()` that covers all writes.
 
+### `upsert_guild` Placement
+
+Call `upsert_guild` **after** all validation guards and **before** the first write that needs the guild FK. Never call it at the top of a command before validation — if the command returns early, the merge is rolled back and the guild row is never persisted. Commands that only read or delete (e.g. `delete`, `view`, `search`) do not need `upsert_guild` at all.
+
 ### Guild Isolation
 
 Every query that touches user data must filter by `guild_id` derived from `interaction.guild_id` (not user-supplied input). After `session.get(Recipe, id)`, always verify:
@@ -89,7 +93,7 @@ def _text_value(field) -> str:
 `recipebot/parsers.py`:
 - `parse_ingredients(text)` — parses `<qty> <unit> <name> <category>` lines
 - `parse_instructions(text)` — splits on newlines, assigns step numbers
-- `aggregate_shopping_items(items)` — aggregates by `(name.lower(), unit)`, preserves insertion order, handles null quantities (items with no quantity pass through as `None`, not summed)
+- `aggregate_shopping_items(items)` — aggregates by `(name.lower(), unit)`, preserves insertion order and first-seen original casing for display names, handles null quantities (items with no quantity pass through as `None`, not summed)
 
 ## Docker Compose Startup Order
 

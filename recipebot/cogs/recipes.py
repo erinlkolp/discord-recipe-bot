@@ -172,7 +172,7 @@ class DeleteConfirmView(discord.ui.View):
 
 class IngredientsModal(discord.ui.Modal, title="Set Ingredients"):
     ingredients_text = discord.ui.TextInput(
-        label="Ingredients (name, qty, unit, category per line)",
+        label="Ingredients (name, qty, unit, category)",
         style=discord.TextStyle.paragraph,
         required=True,
         max_length=4000,
