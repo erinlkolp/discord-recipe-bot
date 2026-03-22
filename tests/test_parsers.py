@@ -100,3 +100,16 @@ def test_aggregate_shopping_items_null_quantity_included():
     assert len(result) == 1
     assert result[0]["ingredient_name"] == "salt"
     assert result[0]["total_quantity"] is None
+
+
+def test_aggregate_shopping_items_preserves_original_casing():
+    items = [
+        {"name": "All-Purpose Flour", "quantity": Decimal("2"), "unit": "cup", "category": "pantry",
+         "entry_servings": 4, "recipe_servings": 4},
+        {"name": "all-purpose flour", "quantity": Decimal("1"), "unit": "cup", "category": "pantry",
+         "entry_servings": 4, "recipe_servings": 4},
+    ]
+    result = aggregate_shopping_items(items)
+    assert len(result) == 1
+    assert result[0]["ingredient_name"] == "All-Purpose Flour"  # first-seen casing preserved
+    assert result[0]["total_quantity"] == Decimal("3")
