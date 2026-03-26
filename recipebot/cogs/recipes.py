@@ -345,6 +345,52 @@ class _WizardIngredientsButton(discord.ui.View):
         await interaction.response.send_modal(modal)
 
 
+class _WizardInstructionsButton(discord.ui.View):
+    """Ephemeral view with a single button that opens the instructions modal."""
+
+    def __init__(self, wizard_view: "AddRecipeWizardView"):
+        super().__init__(timeout=600)
+        self._wizard_view = wizard_view
+
+    @discord.ui.button(label="Next: Add Instructions", style=discord.ButtonStyle.primary)
+    async def open_instructions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = WizardInstructionsModal(self._wizard_view)
+        await interaction.response.send_modal(modal)
+
+
+class WizardIngredientsModal(discord.ui.Modal, title="Add Ingredients (Step 2/3)"):
+    ingredients_text = discord.ui.TextInput(
+        label="Ingredients (name, qty, unit, category)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=4000,
+        placeholder="flour, 2, cup, pantry\neggs, 3, , dairy",
+    )
+
+    def __init__(self, wizard_view: "AddRecipeWizardView"):
+        super().__init__()
+        self._wizard_view = wizard_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from recipebot.parsers import parse_ingredients
+        text = self.ingredients_text.value or self.ingredients_text.default or ""
+        items, errors = parse_ingredients(text)
+        if errors:
+            lines = "\n".join(f"Line {e.line_number}: {e.reason}" for e in errors)
+            await interaction.response.send_message(
+                embed=error_embed(f"Fix these errors and resubmit:\n```{lines}```"),
+                ephemeral=True,
+            )
+            return
+        self._wizard_view.ingredients = items
+        button_view = _WizardInstructionsButton(self._wizard_view)
+        await interaction.response.send_message(
+            embed=success_embed("**Step 2/3 complete** — Ingredients captured."),
+            view=button_view,
+            ephemeral=True,
+        )
+
+
 class AddRecipeWizardModal(discord.ui.Modal, title="Add Recipe (Step 1/3)"):
     name = discord.ui.TextInput(label="Name", required=True, max_length=100)
     description = discord.ui.TextInput(

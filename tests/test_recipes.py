@@ -443,3 +443,53 @@ async def test_wizard_view_finalize_optional_fields_none(session, bot, mock_inte
     assert recipe.description is None
     assert recipe.prep_time is None
     assert recipe.cook_time is None
+
+
+@pytest.mark.asyncio
+async def test_wizard_ingredients_modal_stores_and_sends_button(session, bot, mock_interaction):
+    """Modal 2 should parse ingredients, store on view, and send next button."""
+    from recipebot.cogs.recipes import WizardIngredientsModal, AddRecipeWizardView
+
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    modal = WizardIngredientsModal(wizard_view)
+    modal.ingredients_text.default = "flour, 2, cup, pantry\neggs, 3, , dairy"
+
+    await modal.on_submit(mock_interaction)
+
+    assert wizard_view.ingredients is not None
+    assert len(wizard_view.ingredients) == 2
+    assert wizard_view.ingredients[0].name == "flour"
+
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert call_kwargs.get("ephemeral") is True
+    assert "view" in call_kwargs
+
+    # Still no recipe in DB
+    assert session.query(Recipe).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_wizard_ingredients_modal_parse_error(session, bot, mock_interaction):
+    """Modal 2 with bad format should send error and not store ingredients."""
+    from recipebot.cogs.recipes import WizardIngredientsModal, AddRecipeWizardView
+
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    modal = WizardIngredientsModal(wizard_view)
+    modal.ingredients_text.default = "flour, 2, cup"  # missing category
+
+    await modal.on_submit(mock_interaction)
+
+    assert wizard_view.ingredients is None
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert call_kwargs.get("ephemeral") is True
+    assert "Line 1" in call_kwargs["embed"].description
