@@ -332,6 +332,69 @@ class SearchPaginationView(discord.ui.View):
         await interaction.response.edit_message(embed=self.current_embed(), view=self)
 
 
+class _WizardIngredientsButton(discord.ui.View):
+    """Ephemeral view with a single button that opens the ingredients modal."""
+
+    def __init__(self, wizard_view: "AddRecipeWizardView"):
+        super().__init__(timeout=600)
+        self._wizard_view = wizard_view
+
+    @discord.ui.button(label="Next: Add Ingredients", style=discord.ButtonStyle.primary)
+    async def open_ingredients(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = WizardIngredientsModal(self._wizard_view)
+        await interaction.response.send_modal(modal)
+
+
+class AddRecipeWizardModal(discord.ui.Modal, title="Add Recipe (Step 1/3)"):
+    name = discord.ui.TextInput(label="Name", required=True, max_length=100)
+    description = discord.ui.TextInput(
+        label="Description", style=discord.TextStyle.paragraph,
+        required=False, max_length=1000
+    )
+    servings = discord.ui.TextInput(label="Servings (required)", required=True, max_length=10)
+    prep_time = discord.ui.TextInput(label="Prep Time (minutes)", required=False, max_length=10)
+    cook_time = discord.ui.TextInput(label="Cook Time (minutes)", required=False, max_length=10)
+
+    def __init__(self, wizard_view: "AddRecipeWizardView"):
+        super().__init__()
+        self._wizard_view = wizard_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            servings = int(_text_value(self.servings))
+            if servings <= 0:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                embed=error_embed("Servings must be a positive whole number."), ephemeral=True
+            )
+            return
+
+        try:
+            prep = int(_text_value(self.prep_time)) if _text_value(self.prep_time) else None
+            cook = int(_text_value(self.cook_time)) if _text_value(self.cook_time) else None
+        except ValueError:
+            await interaction.response.send_message(
+                embed=error_embed("Prep time and cook time must be whole numbers (minutes)."),
+                ephemeral=True
+            )
+            return
+
+        self._wizard_view.metadata = {
+            "name": _text_value(self.name),
+            "description": _text_value(self.description) or None,
+            "servings": servings,
+            "prep_time": prep,
+            "cook_time": cook,
+        }
+        button_view = _WizardIngredientsButton(self._wizard_view)
+        await interaction.response.send_message(
+            embed=success_embed("**Step 1/3 complete** — Recipe details captured."),
+            view=button_view,
+            ephemeral=True,
+        )
+
+
 class AddRecipeWizardView(discord.ui.View):
     """Holds accumulated state across the 3-step add-recipe wizard.
 

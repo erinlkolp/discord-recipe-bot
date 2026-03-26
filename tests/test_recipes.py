@@ -346,6 +346,68 @@ async def test_wizard_view_finalize_creates_complete_recipe(session, bot, mock_i
 
 
 @pytest.mark.asyncio
+async def test_wizard_modal_stores_metadata_and_sends_button(session, bot, mock_interaction):
+    """Modal 1 should validate, store metadata on the view, and send an ephemeral message with a view."""
+    from recipebot.cogs.recipes import AddRecipeWizardModal, AddRecipeWizardView
+
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    modal = AddRecipeWizardModal(wizard_view)
+    modal.name.default = "Spaghetti"
+    modal.description.default = "Classic pasta"
+    modal.servings.default = "4"
+    modal.prep_time.default = "10"
+    modal.cook_time.default = "20"
+
+    mock_interaction.guild_id = "111"
+    await modal.on_submit(mock_interaction)
+
+    # Metadata should be stored on the view
+    assert wizard_view.metadata is not None
+    assert wizard_view.metadata["name"] == "Spaghetti"
+    assert wizard_view.metadata["servings"] == 4
+    assert wizard_view.metadata["prep_time"] == 10
+
+    # Should send ephemeral message with a view (button)
+    mock_interaction.response.send_message.assert_called_once()
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert call_kwargs.get("ephemeral") is True
+    assert "view" in call_kwargs
+
+    # No recipe in DB yet
+    assert session.query(Recipe).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_wizard_modal_invalid_servings_sends_error(session, bot, mock_interaction):
+    """Modal 1 with invalid servings should send error and not store metadata."""
+    from recipebot.cogs.recipes import AddRecipeWizardModal, AddRecipeWizardView
+
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    modal = AddRecipeWizardModal(wizard_view)
+    modal.name.default = "Bread"
+    modal.description.default = ""
+    modal.servings.default = "abc"
+    modal.prep_time.default = ""
+    modal.cook_time.default = ""
+
+    await modal.on_submit(mock_interaction)
+
+    assert wizard_view.metadata is None
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert call_kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
 async def test_wizard_view_finalize_optional_fields_none(session, bot, mock_interaction):
     """Finalize should handle None description, prep_time, cook_time."""
     from recipebot.cogs.recipes import AddRecipeWizardView
