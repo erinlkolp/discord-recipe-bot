@@ -493,3 +493,70 @@ async def test_wizard_ingredients_modal_parse_error(session, bot, mock_interacti
     call_kwargs = mock_interaction.response.send_message.call_args[1]
     assert call_kwargs.get("ephemeral") is True
     assert "Line 1" in call_kwargs["embed"].description
+
+
+@pytest.mark.asyncio
+async def test_wizard_instructions_modal_triggers_finalize(session, bot, mock_interaction):
+    """Modal 3 should parse instructions and call finalize, creating the full recipe."""
+    from recipebot.cogs.recipes import WizardInstructionsModal, AddRecipeWizardView
+    from recipebot.parsers import ParsedIngredient
+    from decimal import Decimal
+
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    wizard_view.metadata = {
+        "name": "Pasta",
+        "description": "Quick dinner",
+        "servings": 2,
+        "prep_time": 5,
+        "cook_time": 10,
+    }
+    wizard_view.ingredients = [
+        ParsedIngredient(name="pasta", quantity=Decimal("200"), unit="g", category="pantry"),
+    ]
+
+    modal = WizardInstructionsModal(wizard_view)
+    modal.instructions_text.default = "Boil water\nCook pasta\nDrain"
+
+    mock_interaction.guild_id = "111"
+    await modal.on_submit(mock_interaction)
+
+    # Recipe should now exist in DB with everything
+    recipe = session.query(Recipe).filter_by(guild_id="111", name="Pasta").first()
+    assert recipe is not None
+    assert len(recipe.ingredients) == 1
+    assert len(recipe.instructions) == 3
+
+    # Public embed sent (not ephemeral)
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert "embed" in call_kwargs
+    assert call_kwargs.get("ephemeral") is not True
+
+
+@pytest.mark.asyncio
+async def test_wizard_instructions_modal_empty_rejects(session, bot, mock_interaction):
+    """Modal 3 with blank input should send error and not finalize."""
+    from recipebot.cogs.recipes import WizardInstructionsModal, AddRecipeWizardView
+
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    modal = WizardInstructionsModal(wizard_view)
+    modal.instructions_text.default = "\n\n\n"
+
+    await modal.on_submit(mock_interaction)
+
+    assert wizard_view.instructions is None
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert call_kwargs.get("ephemeral") is True
+    assert session.query(Recipe).count() == 0

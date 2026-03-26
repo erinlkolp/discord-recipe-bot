@@ -358,6 +358,32 @@ class _WizardInstructionsButton(discord.ui.View):
         await interaction.response.send_modal(modal)
 
 
+class WizardInstructionsModal(discord.ui.Modal, title="Add Instructions (Step 3/3)"):
+    instructions_text = discord.ui.TextInput(
+        label="Steps (one per line)",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=4000,
+        placeholder="Boil water\nAdd pasta\nCook 10 minutes\nDrain and serve",
+    )
+
+    def __init__(self, wizard_view: "AddRecipeWizardView"):
+        super().__init__()
+        self._wizard_view = wizard_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        from recipebot.parsers import parse_instructions
+        text = self.instructions_text.value or self.instructions_text.default or ""
+        steps = parse_instructions(text)
+        if not steps:
+            await interaction.response.send_message(
+                embed=error_embed("No instructions provided."), ephemeral=True
+            )
+            return
+        self._wizard_view.instructions = steps
+        await self._wizard_view.finalize(interaction)
+
+
 class WizardIngredientsModal(discord.ui.Modal, title="Add Ingredients (Step 2/3)"):
     ingredients_text = discord.ui.TextInput(
         label="Ingredients (name, qty, unit, category)",
