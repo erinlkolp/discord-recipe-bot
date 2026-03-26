@@ -44,11 +44,11 @@ Same five fields as current `AddRecipeModal`:
 On submit:
 - Validates servings/times (same logic as current `AddRecipeModal.on_submit`)
 - On validation error: sends ephemeral error message, flow stops (user must re-run `/recipebot add`)
-- On success: stores validated metadata on the wizard view, responds with ephemeral step-complete message + button
+- On success: stores validated metadata on `self._wizard_view`, responds with ephemeral step-complete message + next-step view
 
 Does NOT receive `session_factory`. No DB access at this step.
 
-Constructor args: none beyond default Modal init.
+Constructor receives a reference to the `AddRecipeWizardView` instance (`wizard_view`) so it can store validated data on it.
 
 ### `WizardIngredientsModal` (Modal 2)
 
@@ -57,10 +57,10 @@ Same single field as current `IngredientsModal`:
 
 On submit:
 - Calls `parse_ingredients(text)`
-- On parse errors: sends ephemeral error message with line-by-line errors. Flow does NOT advance. The button from step 1 is still available for retry.
-- On success: stores parsed ingredient data on the wizard view, responds with ephemeral step-complete message + button
+- On parse errors: sends ephemeral error message with line-by-line errors. Flow does NOT advance. The "Next: Add Ingredients" button on the *previous* ephemeral message remains functional — the user clicks that button again to retry. (Each modal submission is its own interaction, so consuming this interaction's response for the error does not invalidate the prior message's buttons.)
+- On success: stores parsed `ParsedIngredient` objects on `self._wizard_view.ingredients`, responds with ephemeral step-complete message + next-step view
 
-Does NOT receive `session_factory` or `recipe_id`. No DB access.
+Constructor receives a reference to the `AddRecipeWizardView` instance. No `session_factory` or `recipe_id`. No DB access.
 
 ### `WizardInstructionsModal` (Modal 3)
 
@@ -69,10 +69,10 @@ Same single field as current `InstructionsModal`:
 
 On submit:
 - Calls `parse_instructions(text)`
-- On empty: sends ephemeral error message. Flow does NOT advance.
-- On success: triggers the final save via the wizard view.
+- On empty: sends ephemeral error message. Flow does NOT advance. The "Next: Add Instructions" button on the *previous* ephemeral message remains functional for retry (same interaction isolation as Modal 2).
+- On success: stores parsed step strings on `self._wizard_view.instructions`, then calls `self._wizard_view.finalize(interaction)` to save everything.
 
-Does NOT receive `session_factory` or `recipe_id` directly. Calls back to the wizard view to finalize.
+Constructor receives a reference to the `AddRecipeWizardView` instance. No `session_factory` or `recipe_id` directly.
 
 ### `AddRecipeWizardView` (View — the glue)
 
@@ -80,7 +80,7 @@ Holds all accumulated state across the three modal steps:
 - `session_factory` (callable)
 - `guild_id`, `guild_name`, `user_id` (from the original interaction)
 - `metadata` dict — populated after Modal 1
-- `ingredients` list — populated after Modal 2 (parsed `IngredientItem` objects)
+- `ingredients` list — populated after Modal 2 (parsed `ParsedIngredient` objects from `parsers.py`)
 - `instructions` list — populated after Modal 3 (parsed step strings)
 
 Timeout: 600 seconds (10 minutes).
@@ -92,19 +92,36 @@ The view transitions through two button states:
 
 Each button state is a new view instance sent with the step-complete ephemeral message.
 
-**Final save (called after Modal 3 succeeds):**
+**`finalize(interaction)` method (called after Modal 3 succeeds):**
 ```python
-with self.session_factory() as session:
-    upsert_guild(session, guild_id, guild_name)
-    recipe = Recipe(...)  # from metadata
-    session.add(recipe)
-    session.flush()  # get recipe.id
-    # add all Ingredient rows
-    # add all Instruction rows
-    session.commit()
-    embed = RecipesCog._build_recipe_embed(recipe)
+async def finalize(self, interaction):
+    with self.session_factory() as session:
+        upsert_guild(session, guild_id, guild_name)
+        now = datetime.now(timezone.utc)
+        recipe = Recipe(
+            guild_id=guild_id, name=metadata["name"],
+            description=metadata["description"], servings=metadata["servings"],
+            prep_time=metadata["prep_time"], cook_time=metadata["cook_time"],
+            created_by=str(user_id), created_at=now, updated_at=now,
+        )
+        session.add(recipe)
+        session.flush()  # get recipe.id for FK
+        for item in self.ingredients:
+            session.add(Ingredient(
+                recipe_id=recipe.id, name=item.name,
+                quantity=item.quantity, unit=item.unit, category=item.category,
+            ))
+        for i, step in enumerate(self.instructions, start=1):
+            session.add(Instruction(
+                recipe_id=recipe.id, step_number=i, instruction_text=step,
+            ))
+        session.flush()  # ensure relationships are populated before building embed
+        session.refresh(recipe)  # reload with ingredients/instructions collections
+        embed = RecipesCog._build_recipe_embed(recipe)
+        session.commit()
+    await interaction.response.send_message(embed=embed)
 ```
-Sends the embed as a public (non-ephemeral) message via `interaction.followup.send` or `interaction.response.send_message`.
+The `session.flush()` + `session.refresh(recipe)` ensures `recipe.ingredients` and `recipe.instructions` relationship collections are populated before `_build_recipe_embed` accesses them. The embed is built inside the session block, then sent after commit.
 
 ## Error Handling
 
