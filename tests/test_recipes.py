@@ -293,3 +293,91 @@ async def test_tag_modal_replaces(session, bot, mock_interaction):
     remaining = session.query(Tag).filter_by(recipe_id=recipe.id).all()
     tag_names = {t.tag_name for t in remaining}
     assert tag_names == {"italian", "pasta"}
+
+
+@pytest.mark.asyncio
+async def test_wizard_view_finalize_creates_complete_recipe(session, bot, mock_interaction):
+    """Wizard finalize should create recipe + ingredients + instructions in one transaction."""
+    from recipebot.cogs.recipes import AddRecipeWizardView
+    from recipebot.parsers import ParsedIngredient
+    from decimal import Decimal
+
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+
+    view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    view.metadata = {
+        "name": "Spaghetti",
+        "description": "Classic pasta",
+        "servings": 4,
+        "prep_time": 10,
+        "cook_time": 20,
+    }
+    view.ingredients = [
+        ParsedIngredient(name="pasta", quantity=Decimal("200"), unit="g", category="pantry"),
+        ParsedIngredient(name="sauce", quantity=Decimal("1"), unit="cup", category="pantry"),
+    ]
+    view.instructions = ["Boil water", "Cook pasta", "Add sauce"]
+
+    mock_interaction.guild_id = "111"
+    await view.finalize(mock_interaction)
+
+    recipe = session.query(Recipe).filter_by(guild_id="111", name="Spaghetti").first()
+    assert recipe is not None
+    assert recipe.servings == 4
+    assert recipe.prep_time == 10
+    assert recipe.cook_time == 20
+    assert recipe.created_by == "999"
+    assert len(recipe.ingredients) == 2
+    assert len(recipe.instructions) == 3
+    assert recipe.instructions[0].instruction_text == "Boil water"
+    assert recipe.instructions[0].step_number == 1
+
+    # Final message should be a public embed (no ephemeral kwarg)
+    mock_interaction.response.send_message.assert_called_once()
+    call_kwargs = mock_interaction.response.send_message.call_args[1]
+    assert "embed" in call_kwargs
+    assert call_kwargs.get("ephemeral") is not True
+
+
+@pytest.mark.asyncio
+async def test_wizard_view_finalize_optional_fields_none(session, bot, mock_interaction):
+    """Finalize should handle None description, prep_time, cook_time."""
+    from recipebot.cogs.recipes import AddRecipeWizardView
+    from recipebot.parsers import ParsedIngredient
+    from decimal import Decimal
+
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+
+    view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    view.metadata = {
+        "name": "Toast",
+        "description": None,
+        "servings": 1,
+        "prep_time": None,
+        "cook_time": None,
+    }
+    view.ingredients = [
+        ParsedIngredient(name="bread", quantity=Decimal("2"), unit="slice", category="bakery"),
+    ]
+    view.instructions = ["Put bread in toaster"]
+
+    mock_interaction.guild_id = "111"
+    await view.finalize(mock_interaction)
+
+    recipe = session.query(Recipe).filter_by(guild_id="111", name="Toast").first()
+    assert recipe is not None
+    assert recipe.description is None
+    assert recipe.prep_time is None
+    assert recipe.cook_time is None

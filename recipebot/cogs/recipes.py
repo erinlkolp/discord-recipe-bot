@@ -332,6 +332,64 @@ class SearchPaginationView(discord.ui.View):
         await interaction.response.edit_message(embed=self.current_embed(), view=self)
 
 
+class AddRecipeWizardView(discord.ui.View):
+    """Holds accumulated state across the 3-step add-recipe wizard.
+
+    Each modal stores its validated data here. After all three modals complete,
+    finalize() saves everything in one DB transaction.
+    """
+
+    def __init__(self, session_factory, guild_id: str, guild_name: str, user_id: str):
+        super().__init__(timeout=600)
+        self.session_factory = session_factory
+        self.guild_id = guild_id
+        self.guild_name = guild_name
+        self.user_id = user_id
+        self.metadata: dict | None = None
+        self.ingredients: list | None = None
+        self.instructions: list[str] | None = None
+
+    async def finalize(self, interaction: discord.Interaction):
+        from recipebot.db.models import Ingredient, Instruction
+        m = self.metadata
+        with self.session_factory() as session:
+            upsert_guild(session, self.guild_id, self.guild_name)
+            now = datetime.now(timezone.utc)
+            recipe = Recipe(
+                guild_id=self.guild_id,
+                name=m["name"],
+                description=m["description"],
+                servings=m["servings"],
+                prep_time=m["prep_time"],
+                cook_time=m["cook_time"],
+                created_by=self.user_id,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(recipe)
+            session.flush()
+            for item in self.ingredients:
+                session.add(Ingredient(
+                    recipe_id=recipe.id,
+                    name=item.name,
+                    quantity=item.quantity,
+                    unit=item.unit,
+                    category=item.category,
+                ))
+            for i, step in enumerate(self.instructions, start=1):
+                session.add(Instruction(
+                    recipe_id=recipe.id,
+                    step_number=i,
+                    instruction_text=step,
+                ))
+            session.flush()
+            session.refresh(recipe)
+            embed = RecipesCog._build_recipe_embed(recipe)
+            session.commit()
+        self.stop()
+        await interaction.response.send_message(embed=embed)
+
+
 recipebot_group = app_commands.Group(name="recipebot", description="Recipe bot commands")
 
 
