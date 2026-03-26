@@ -382,7 +382,6 @@ class AddRecipeWizardView(discord.ui.View):
                     step_number=i,
                     instruction_text=step,
                 ))
-            session.flush()
             session.refresh(recipe)
             embed = RecipesCog._build_recipe_embed(recipe)
             session.commit()
