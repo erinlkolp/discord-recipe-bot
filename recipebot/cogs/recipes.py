@@ -546,9 +546,14 @@ class RecipesCog(commands.Cog):
 
     @recipebot_group.command(name="add", description="Add a new recipe")
     async def add(self, interaction: discord.Interaction):
-        modal = AddRecipeModal(self.bot.session_factory)
+        wizard_view = AddRecipeWizardView(
+            session_factory=self.bot.session_factory,
+            guild_id=str(interaction.guild_id),
+            guild_name=interaction.guild.name,
+            user_id=str(interaction.user.id),
+        )
+        modal = AddRecipeWizardModal(wizard_view)
         await interaction.response.send_modal(modal)
-        await modal.wait()
 
     @recipebot_group.command(name="edit", description="Edit an existing recipe")
     @app_commands.autocomplete(recipe=_recipe_autocomplete)

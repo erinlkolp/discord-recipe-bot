@@ -560,3 +560,20 @@ async def test_wizard_instructions_modal_empty_rejects(session, bot, mock_intera
     call_kwargs = mock_interaction.response.send_message.call_args[1]
     assert call_kwargs.get("ephemeral") is True
     assert session.query(Recipe).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_add_command_sends_wizard_modal(session, bot, mock_interaction):
+    """The /recipebot add command should now send AddRecipeWizardModal."""
+    from recipebot.cogs.recipes import AddRecipeWizardModal
+
+    mock_interaction.guild_id = "111"
+    mock_interaction.guild.name = "Test"
+    mock_interaction.user.id = "999"
+
+    cog = RecipesCog(bot)
+    await cog.add.callback(cog, mock_interaction)
+
+    mock_interaction.response.send_modal.assert_called_once()
+    modal = mock_interaction.response.send_modal.call_args[0][0]
+    assert isinstance(modal, AddRecipeWizardModal)
