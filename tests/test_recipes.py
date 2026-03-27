@@ -577,3 +577,84 @@ async def test_add_command_sends_wizard_modal(session, bot, mock_interaction):
     mock_interaction.response.send_modal.assert_called_once()
     modal = mock_interaction.response.send_modal.call_args[0][0]
     assert isinstance(modal, AddRecipeWizardModal)
+
+
+@pytest.mark.asyncio
+async def test_wizard_full_flow_end_to_end(session, bot, mock_interaction):
+    """Simulate the complete 3-modal wizard flow from /recipebot add to final save."""
+    from recipebot.cogs.recipes import AddRecipeWizardModal, AddRecipeWizardView
+
+    session.add(Guild(guild_id="111", name="Test"))
+    session.commit()
+
+    # Step 1: Create wizard view and modal 1 (as the add command would)
+    wizard_view = AddRecipeWizardView(
+        session_factory=bot.session_factory,
+        guild_id="111",
+        guild_name="Test",
+        user_id="999",
+    )
+    modal1 = AddRecipeWizardModal(wizard_view)
+    modal1.name.default = "Tacos"
+    modal1.description.default = "Tuesday tacos"
+    modal1.servings.default = "4"
+    modal1.prep_time.default = "15"
+    modal1.cook_time.default = "10"
+
+    interaction1 = MagicMock()
+    interaction1.guild_id = "111"
+    interaction1.response.send_message = AsyncMock()
+    await modal1.on_submit(interaction1)
+
+    # Verify step 1 complete, metadata stored
+    assert wizard_view.metadata is not None
+    assert wizard_view.metadata["name"] == "Tacos"
+    assert session.query(Recipe).count() == 0  # nothing saved yet
+
+    # Step 2: Simulate button click opening modal 2
+    # Get the button view that was sent
+    button_view_1 = interaction1.response.send_message.call_args[1]["view"]
+    interaction2 = MagicMock()
+    interaction2.response.send_modal = AsyncMock()
+    interaction2.response.send_message = AsyncMock()
+    # Click the button (callback is already bound to the view)
+    await button_view_1.open_ingredients.callback(interaction2)
+    modal2 = interaction2.response.send_modal.call_args[0][0]
+
+    modal2.ingredients_text.default = "beef, 1, lb, meat\ntortillas, 8, , bakery\ncheese, 1, cup, dairy"
+    interaction2b = MagicMock()
+    interaction2b.guild_id = "111"
+    interaction2b.response.send_message = AsyncMock()
+    await modal2.on_submit(interaction2b)
+
+    assert wizard_view.ingredients is not None
+    assert len(wizard_view.ingredients) == 3
+    assert session.query(Recipe).count() == 0  # still nothing saved
+
+    # Step 3: Simulate button click opening modal 3
+    button_view_2 = interaction2b.response.send_message.call_args[1]["view"]
+    interaction3 = MagicMock()
+    interaction3.response.send_modal = AsyncMock()
+    interaction3.response.send_message = AsyncMock()
+    await button_view_2.open_instructions.callback(interaction3)
+    modal3 = interaction3.response.send_modal.call_args[0][0]
+
+    modal3.instructions_text.default = "Brown the beef\nWarm tortillas\nAssemble tacos"
+    interaction3b = MagicMock()
+    interaction3b.guild_id = "111"
+    interaction3b.response.send_message = AsyncMock()
+    await modal3.on_submit(interaction3b)
+
+    # Now everything should be saved
+    recipe = session.query(Recipe).filter_by(guild_id="111", name="Tacos").first()
+    assert recipe is not None
+    assert recipe.servings == 4
+    assert len(recipe.ingredients) == 3
+    assert len(recipe.instructions) == 3
+    assert recipe.ingredients[0].name == "beef"
+    assert recipe.instructions[0].instruction_text == "Brown the beef"
+
+    # Final message should be a public embed
+    call_kwargs = interaction3b.response.send_message.call_args[1]
+    assert "embed" in call_kwargs
+    assert call_kwargs.get("ephemeral") is not True
