@@ -487,39 +487,46 @@ class AddRecipeWizardView(discord.ui.View):
     async def finalize(self, interaction: discord.Interaction):
         from recipebot.db.models import Ingredient, Instruction
         m = self.metadata
-        with self.session_factory() as session:
-            upsert_guild(session, self.guild_id, self.guild_name)
-            now = datetime.now(timezone.utc)
-            recipe = Recipe(
-                guild_id=self.guild_id,
-                name=m["name"],
-                description=m["description"],
-                servings=m["servings"],
-                prep_time=m["prep_time"],
-                cook_time=m["cook_time"],
-                created_by=self.user_id,
-                created_at=now,
-                updated_at=now,
+        try:
+            with self.session_factory() as session:
+                upsert_guild(session, self.guild_id, self.guild_name)
+                now = datetime.now(timezone.utc)
+                recipe = Recipe(
+                    guild_id=self.guild_id,
+                    name=m["name"],
+                    description=m["description"],
+                    servings=m["servings"],
+                    prep_time=m["prep_time"],
+                    cook_time=m["cook_time"],
+                    created_by=self.user_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(recipe)
+                session.flush()
+                for item in self.ingredients:
+                    session.add(Ingredient(
+                        recipe_id=recipe.id,
+                        name=item.name,
+                        quantity=item.quantity,
+                        unit=item.unit,
+                        category=item.category,
+                    ))
+                for i, step in enumerate(self.instructions, start=1):
+                    session.add(Instruction(
+                        recipe_id=recipe.id,
+                        step_number=i,
+                        instruction_text=step,
+                    ))
+                session.refresh(recipe)
+                embed = RecipesCog._build_recipe_embed(recipe)
+                session.commit()
+        except Exception:
+            await interaction.response.send_message(
+                embed=error_embed("Something went wrong saving the recipe. Please try again."),
+                ephemeral=True,
             )
-            session.add(recipe)
-            session.flush()
-            for item in self.ingredients:
-                session.add(Ingredient(
-                    recipe_id=recipe.id,
-                    name=item.name,
-                    quantity=item.quantity,
-                    unit=item.unit,
-                    category=item.category,
-                ))
-            for i, step in enumerate(self.instructions, start=1):
-                session.add(Instruction(
-                    recipe_id=recipe.id,
-                    step_number=i,
-                    instruction_text=step,
-                ))
-            session.refresh(recipe)
-            embed = RecipesCog._build_recipe_embed(recipe)
-            session.commit()
+            return
         self.stop()
         await interaction.response.send_message(embed=embed)
 
