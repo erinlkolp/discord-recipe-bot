@@ -10,7 +10,7 @@ services:
     volumes:
       - percona_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysql", "-h", "localhost", "-u", "root", "--password=${DB_ROOT_PASSWORD}", "--default-auth=caching_sha2_password", "-e", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 5
