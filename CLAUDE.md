@@ -45,6 +45,25 @@ with session_factory() as session:
 view = SearchPaginationView(results)
 ```
 
+### Add Recipe Wizard (3-step modal chain)
+
+`/recipebot add` uses a 3-step wizard: metadata → ingredients → instructions. All wizard classes live in `recipebot/cogs/recipes.py`.
+
+**Data flow:** `AddRecipeWizardView` holds shared state (`metadata`, `ingredients`, `instructions`). Each modal receives a reference to the same view and writes its parsed data onto it. No database access happens until `finalize()`.
+
+**Classes:**
+- `AddRecipeWizardView` — shared state holder + `finalize()` method that saves everything in one transaction
+- `AddRecipeWizardModal` — Step 1: name, description, servings, prep/cook time
+- `WizardIngredientsModal` — Step 2: parses ingredient lines via `parse_ingredients()`
+- `WizardInstructionsModal` — Step 3: parses instruction lines via `parse_instructions()`, then calls `finalize()`
+- `_WizardIngredientsButton` / `_WizardInstructionsButton` — ephemeral button views linking steps
+
+**Key invariants:**
+- Modals only validate and parse — they never touch the database
+- Intermediate step messages are ephemeral; only the final recipe embed is public
+- `finalize()` uses `session.flush()` to get the recipe ID, then `session.refresh(recipe)` to load relationships before building the embed, then `session.commit()` atomically
+- `finalize()` is wrapped in try/except — DB errors produce an ephemeral error message
+
 ### Shared `recipebot_group`
 
 `recipebot_group` is defined at module level in `recipebot/cogs/recipes.py`. All three cogs attach commands to it.

@@ -69,7 +69,7 @@ All commands are under `/recipebot`.
 
 | Command | Description |
 |---|---|
-| `/recipebot add` | Add a new recipe (opens a modal) |
+| `/recipebot add` | Add a new recipe via a 3-step wizard (name/description → ingredients → instructions) |
 | `/recipebot edit <recipe>` | Edit an existing recipe |
 | `/recipebot delete <recipe>` | Delete a recipe (with confirmation) |
 | `/recipebot view <recipe>` | View a recipe's full details |
@@ -137,6 +137,16 @@ tests/
   test_meal_plan.py
   test_shopping.py
 ```
+
+### Add Recipe Wizard
+
+`/recipebot add` launches a 3-step wizard that walks you through creating a complete recipe:
+
+1. **Step 1 — Metadata:** Enter the recipe name, description, servings, prep time, and cook time
+2. **Step 2 — Ingredients:** Click "Next: Add Ingredients" and enter ingredients (one per line, see format below)
+3. **Step 3 — Instructions:** Click "Next: Add Instructions" and enter cooking steps (one per line)
+
+Nothing is saved until all three steps are completed. If you close a modal or the view times out, no partial recipe is created. The final result is posted as a public embed showing the full recipe.
 
 ### Ingredient Format
 
